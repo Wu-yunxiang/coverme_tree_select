@@ -1,17 +1,15 @@
 #include <queue>
-#include <utility>
 
-#include "constants.h"
 #include "select_priority.h"
 
-struct distance_info{
-    int branchId; // 分支ID
+struct priority_info{
+    int nodeId; // 节点ID
     int similarity; // 相似度
-    int constraint_nb; // 约束数量 (deep - 1)
+    int constraint_nb; // 约束数量 (deep)
     double gradient_score; // 梯度得分
-    int seedId; // 该距离对应的种子ID  
+    int seedId; // 用于满足当前节点的初始种子ID
     
-    bool operator < (const distance_info &other) const {
+    bool operator < (const priority_info &other) const {
         bool flag;
         int me = constraint_nb * (constraint_nb - similarity);
         int ot = other.constraint_nb * (other.constraint_nb - other.similarity);
@@ -25,5 +23,6 @@ struct distance_info{
         return !flag;
     }
 }; 
+std::priority_queue<priority_info> queue_for_select; //全局小根堆
 
 

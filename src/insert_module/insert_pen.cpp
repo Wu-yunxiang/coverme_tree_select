@@ -7,7 +7,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Analysis/DominatorTree.h"  // 使用支配树
+#include "llvm/Analysis/DominatorTree.h"
 #include "llvm/IR/CFG.h"
 
 // C++ 标准库
@@ -17,133 +17,147 @@
 #include <vector>
 #include <set>
 #include <queue>
+#include <algorithm>
+#include <functional> // 必须包含，用于 std::function
 
 using namespace llvm;
 
 cl::opt<std::string> funcname("funcname", cl::desc("Specify function name"), cl::value_desc("funcname"));
-extern int tree_node_count;
-
+extern int brCount;  // 全局分支/select计数
+extern int argCount;
 struct InsertPenPass : public ModulePass {
     static char ID;
     InsertPenPass() : ModulePass(ID) {}
 
-    // 存储每个分支/选择出口的必经条件：(id, bool) -> 有序的 (id, bool) 列表
-    std::map<std::pair<int, bool>, std::vector<std::pair<int, bool>>> branchExitConds;
-
     bool runOnModule(Module &M) override {
         for (Function &F : M) {
             if (F.getName() == funcname) {
-                int brCount = 0;
-                std::map<Instruction*, int> instToId;          // 指令 -> ID
-                std::vector<Instruction*> allBranches;        // 所有分支/选择指令
+                int argCount = F.arg_size();
+                // ---------- 第一阶段：收集所有分支/select指令并分配ID ----------
+                std::map<Instruction*, int> instToId;          // 指令 -> 出口基ID
+                std::vector<Instruction*> allBranches;         // 所有分支/select指令
+                std::map<Instruction*, BasicBlock*> instToBB;  // 指令所在基本块
 
-                // 第一阶段：分配ID并收集所有分支/选择指令（条件分支和select）
                 for (BasicBlock &BB : F) {
                     for (Instruction &I : BB) {
                         Instruction *inst = &I;
-                        // 跳过间接跳转和switch（保持原接口）
+                        // 排除间接跳转和Switch，只处理条件分支和Select
                         if (isa<IndirectBrInst>(inst) || isa<SwitchInst>(inst)) continue;
                         
                         if (BranchInst *BI = dyn_cast<BranchInst>(inst)) {
                             if (BI->isConditional()) {
                                 instToId[inst] = brCount++;
                                 allBranches.push_back(inst);
+                                instToBB[inst] = &BB;
                             }
-                        } else if (isa<SelectInst>(inst)) {
+                        } else if (SelectInst *SI = dyn_cast<SelectInst>(inst)) {
                             instToId[inst] = brCount++;
                             allBranches.push_back(inst);
+                            instToBB[inst] = &BB;
                         }
                     }
                 }
+                int totalBr = brCount;          // 总分支/select指令数
+                // int totalExits = 2 * totalBr; // 总出口数 (变量保留但在此逻辑中主要作为Offset使用)
+                int ROOT = -1;                  // 虚拟根节点ID，标记无父节点的情况
 
-                // 第二阶段：计算每个基本块的必经条件
+                // ---------- 第二阶段：建立基本块索引和支配树 ----------
+                std::map<BasicBlock*, int> blockIdx;
+                std::vector<BasicBlock*> blocks;
+                for (BasicBlock &BB : F) {
+                    blockIdx[&BB] = blocks.size();
+                    blocks.push_back(&BB);
+                }
+                int numBlocks = blocks.size();
+
                 DominatorTree DT;
                 DT.recalculate(F);
 
-                // 映射：基本块 -> 必经条件列表（按支配顺序排列）
-                std::map<BasicBlock*, std::vector<std::pair<int, bool>>> BB_mustCond;
+                // ---------- 第三阶段：计算每个基本块的直接父节点（控制它的分支出口）----------
+                // 优化算法：基于支配树的 DFS 遍历
+                // parentBlock 存储每个基本块对应的“最近必经条件出口ID”
+                std::vector<int> parentBlock(numBlocks, ROOT); 
 
-                for (BasicBlock &BB : F) {
-                    // 计算反向可达集：所有能到达BB的块
-                    std::set<BasicBlock*> reach;
-                    std::queue<BasicBlock*> worklist;
-                    reach.insert(&BB);
-                    worklist.push(&BB);
-                    while (!worklist.empty()) {
-                        BasicBlock *cur = worklist.front();
-                        worklist.pop();
-                        for (BasicBlock *pred : predecessors(cur)) {
-                            if (reach.insert(pred).second)
-                                worklist.push(pred);
-                        }
-                    }
+                // 定义 DFS 函数：向下传递当前的必经条件 ID
+                std::function<void(DomTreeNode*, int)> dfsFindParent = 
+                    [&](DomTreeNode *Node, int currentParentID) {
+                    
+                    BasicBlock *BB = Node->getBlock();
+                    int myParentID = currentParentID; // 默认继承父节点的必经条件
 
-                    // 获取严格支配BB的所有节点（从根到BB，不包括BB本身）
-                    std::vector<BasicBlock*> doms;
-                    DomTreeNode *node = DT.getNode(&BB);
-                    if (node) {
-                        while (node->getIDom()) {
-                            node = node->getIDom();
-                            doms.push_back(node->getBlock());
-                        }
-                        std::reverse(doms.begin(), doms.end()); // 按执行顺序：根先
-                    }
+                    // 如果不是支配树根节点，检查是否被 IDom 的某个分支严格控制
+                    if (Node->getIDom()) {
+                        BasicBlock *domBB = Node->getIDom()->getBlock();
+                        Instruction *terminator = domBB->getTerminator();
 
-                    // 遍历严格支配者，找出必经条件
-                    std::vector<std::pair<int, bool>> conds;
-                    for (BasicBlock *X : doms) {
-                        Instruction *term = X->getTerminator();
-                        if (BranchInst *BI = dyn_cast<BranchInst>(term)) {
+                        // 只有当支配块以条件分支结束，且我们记录了该分支（分配了ID）时才进行判断
+                        if (BranchInst *BI = dyn_cast<BranchInst>(terminator)) {
                             if (BI->isConditional() && instToId.count(BI)) {
-                                int cnt = 0;
-                                BasicBlock *uniqueSucc = nullptr;
-                                for (unsigned i = 0; i < 2; ++i) {
-                                    BasicBlock *succ = BI->getSuccessor(i);
-                                    if (reach.count(succ)) {
-                                        cnt++;
-                                        uniqueSucc = succ;
-                                    }
+                                BasicBlock *trueSucc = BI->getSuccessor(0);
+                                BasicBlock *falseSucc = BI->getSuccessor(1);
+
+                                // 利用支配关系判断：
+                                // 如果 True 分支的后继支配当前块 BB，且 False 分支后继不支配，则必经 True 边
+                                bool governedByTrue = DT.dominates(trueSucc, BB);
+                                bool governedByFalse = DT.dominates(falseSucc, BB);
+
+                                int brId = instToId[BI];
+
+                                if (governedByTrue && !governedByFalse) {
+                                    myParentID = brId; // 更新为 True 出口 ID
+                                } else if (!governedByTrue && governedByFalse) {
+                                    myParentID = brId + totalBr; // 更新为 False 出口 ID
                                 }
-                                if (cnt == 1) {
-                                    bool dir = (uniqueSucc == BI->getSuccessor(0)); // true 对应第一个后继
-                                    conds.emplace_back(instToId[BI], dir);
-                                }
+                                // 否则（如汇聚点），保持 inheritedParentID
                             }
                         }
-                        // 其他类型分支（如switch）暂不处理，可扩展
                     }
-                    BB_mustCond[&BB] = conds;
+
+                    // 记录结果
+                    if (blockIdx.count(BB)) {
+                        parentBlock[blockIdx[BB]] = myParentID;
+                    }
+
+                    // 递归处理子节点
+                    for (DomTreeNode *Child : *Node) {
+                        dfsFindParent(Child, myParentID);
+                    }
+                };
+
+                // 从支配树根节点开始遍历
+                if (DT.getRootNode()) {
+                    dfsFindParent(DT.getRootNode(), ROOT);
                 }
 
-                // 第三阶段：构建分支出口和select出口的必经条件映射
+                // ---------- 第四阶段：输出边信息 ----------
+                std::ofstream edgeFile;
+                edgeFile.open("to do (by configs)", std::ofstream::out | std::ofstream::trunc);
+                
                 for (Instruction *inst : allBranches) {
-                    if (BranchInst *BI = dyn_cast<BranchInst>(inst)) {
-                        if (BI->isConditional()) {
-                            int id = instToId[BI];
-                            BasicBlock *trueSucc = BI->getSuccessor(0);
-                            BasicBlock *falseSucc = BI->getSuccessor(1);
-                            branchExitConds[{id, true}] = BB_mustCond[trueSucc];
-                            branchExitConds[{id, false}] = BB_mustCond[falseSucc];
-                        }
-                    } else if (SelectInst *SI = dyn_cast<SelectInst>(inst)) {
-                        int id = instToId[SI];
-                        BasicBlock *parent = SI->getParent();
-                        // select 的两个“出口”都在同一个基本块，因此必经条件相同
-                        branchExitConds[{id, true}] = BB_mustCond[parent];
-                        branchExitConds[{id, false}] = BB_mustCond[parent];
+                    int id = instToId[inst];
+                    BasicBlock *BB = instToBB[inst];
+                    
+                    // 获取该指令所在基本块的必经父节点
+                    int parent = parentBlock[blockIdx[BB]];
+
+                    // 只有当存在有效的父节点（不是根）时才输出
+                    if (parent != ROOT) {
+                        int trueExit = id;
+                        int falseExit = id + totalBr;
+                        
+                        edgeFile << parent << "\t" << trueExit << "\n";
+                        edgeFile << parent << "\t" << falseExit << "\n";
                     }
                 }
+                edgeFile.close();
 
-                // 第四阶段：原有的插桩逻辑（保持不变）
-                std::ofstream myfile;
-                myfile.open("to do (by configs)", std::ofstream::out | std::ofstream::trunc);
-
+                // ---------- 第五阶段：原有的插桩逻辑（保持不变） ----------
                 for (Instruction *inst : allBranches) {
                     CmpInst *cmpInst = nullptr;
                     if (BranchInst *BI = dyn_cast<BranchInst>(inst)) {
-                        cmpInst = cast<CmpInst>(BI->getCondition());
+                        cmpInst = dyn_cast<CmpInst>(BI->getCondition());
                     } else if (SelectInst *SI = dyn_cast<SelectInst>(inst)) {
-                        cmpInst = cast<CmpInst>(SI->getCondition());
+                        cmpInst = dyn_cast<CmpInst>(SI->getCondition());
                     } else {
                         continue;
                     }
@@ -154,25 +168,40 @@ struct InsertPenPass : public ModulePass {
                     Value *RHS = cmpInst->getOperand(1);
                     std::vector<Value*> call_params;
                     IRBuilder<> builder(inst);
+                    
+                    // 准备操作数，转换为 double
+                    Value *LHS_Double = LHS;
+                    Value *RHS_Double = RHS;
+
+                    // 处理整数比较的转换
                     if (isa<ICmpInst>(cmpInst)) {
-                        LHS = builder.CreateSIToFP(LHS, Type::getDoubleTy(M.getContext()), "__LHS");
-                        RHS = builder.CreateSIToFP(RHS, Type::getDoubleTy(M.getContext()), "__RHS");
+                        // 如果类型不是 double，进行转换
+                        if (!LHS->getType()->isDoubleTy()) {
+                             LHS_Double = builder.CreateSIToFP(LHS, Type::getDoubleTy(M.getContext()), "__LHS");
+                        }
+                        if (!RHS->getType()->isDoubleTy()) {
+                             RHS_Double = builder.CreateSIToFP(RHS, Type::getDoubleTy(M.getContext()), "__RHS");
+                        }
+                    } 
+                    // 处理浮点数比较（如果是 float 需要扩展到 double）
+                    else if (LHS->getType()->isFloatTy()) {
+                        LHS_Double = builder.CreateFPExt(LHS, Type::getDoubleTy(M.getContext()), "__LHS");
+                        RHS_Double = builder.CreateFPExt(RHS, Type::getDoubleTy(M.getContext()), "__RHS");
                     }
-                    call_params.push_back(LHS);
-                    call_params.push_back(RHS);
+
+                    call_params.push_back(LHS_Double);
+                    call_params.push_back(RHS_Double);
 
                     int brId = instToId[inst];
                     int cmpId = cmpInst->getPredicate();
                     int isInt = isa<ICmpInst>(cmpInst);
 
-                    std::string str;
-                    llvm::raw_string_ostream rso(str);
-                    inst->print(rso);
-                    myfile << brId << "\t" << cmpId << "\t" << isInt << "\t" << str << "\n";
-
                     ConstantInt* brId_32 = ConstantInt::get(Type::getInt32Ty(M.getContext()), brId, false);
                     ConstantInt* cmpId_32 = ConstantInt::get(Type::getInt32Ty(M.getContext()), cmpId, false);
-                    ConstantInt* isInt_1 = ConstantInt::getBool(M.getContext(), isInt);
+                    ConstantInt* isInt_1 = ConstantInt::getBool(M.getContext(), isInt); // i1
+                    // 注意：插桩函数签名通常要求 i32 用于 bool 参数，或者保持 i1，这里根据原代码逻辑适配
+                    // 原代码示例：Type::getInt1Ty(M.getContext()) 对应参数
+                    
                     call_params.push_back(brId_32);
                     call_params.push_back(cmpId_32);
                     call_params.push_back(isInt_1);
@@ -194,8 +223,6 @@ struct InsertPenPass : public ModulePass {
                     builder.CreateCall(func___pen, call_params, "");
                 }
 
-                myfile.close();
-                tree_node_count = brCount;
                 return true;
             }
         }

@@ -136,38 +136,26 @@ static inline double calculate_distance(double LHS, double RHS, int cmpId, bool 
     }
 }
 
-static double inline amplifier_0630(double x){
-    return 42*x*x*x*x+1;
-}
-
 extern std::unordered_set<int> explored; // 只记录叶结点，叶结点没有第二维，统计覆盖率的时候统一添加路径上所有
-extern std::map<seed_branch_info, int> seed_branch_block_count; // 对相同seed的所有niter的统计，但是不能干扰单次niter
-std::map<seed_branch_info, bool> seed_branch_block_count_one_bunch; // 记录当前种子在（每个niter）本批最小化流程中作为拦路虎的次数
-int targetId; // 当前待覆盖或者待判定的叶结点
+int target; // 当前待覆盖或者待判定的叶结点
 bool isSuccess; //本次调用是否覆盖了目标
 bool currentSeedId; // 当前种子ID
-bool isSelfMode = true; // 初始不更新别的分支
-std::set<std::pair<int, bool> > isCount; // 记录本次函数调用,分支是否被作为拦路虎参与计数
-extern std::vector<std::pair<int, bool> > leaf_prefix[MAXN];
-extern bool isLeaf[MAXN];
+bool isSelfMode = true; // 初始值
+extern std::vector<int> node_prefix[MAXN];
 extern int deep[MAXN];
 
 static inline std::pair<int, bool> isSatisfied(int currentId, bool currentTruth) {
     int first = -1;
     bool second = false;
-    for(int i=0; i<leaf_prefix[targetId].size(); i++) {
-        auto p = leaf_prefix[targetId][i];
-        if(p.first == currentId) {
+    for(int i=0; i<node_prefix[target].size(); i++) {
+        auto p = node_prefix[target][i];
+        if(p == currentId) {
             first = i;
-            second = (currentTruth == p.second);
+            second = currentTruth;
             break;
         }
     }
     return std::make_pair(first, second);
-}
-
-static inline double fn(int gap, int blockCount) {
-    return amplifier_0630(blockCount) + pow(SOLUTION_COMPLEXITY, gap);
 }
 
 extern "C" {
@@ -177,17 +165,12 @@ extern "C" {
         std::pair<int, bool> satisfiedInfo = isSatisfied(currentId, currentTruth);
         if(satisfiedInfo.first != -1) { // 当前分支在目标前缀路径上
             if (!satisfiedInfo.second) { // 当前分支取值不满足条件
-                seed_branch_info info{currentSeedId, currentId, currentTruth};
-                __r = min(__r, calculate_distance(LHS, RHS, cmpId, currentTruth, targetTruth, isSelfMode) * fn(deep[targetId] - satisfiedInfo.first, seed_branch_block_count[info]) );
-                if(isCount.find(std::make_pair(currentId, currentTruth)) == isCount.end()) { // 之前没有被作为拦路虎计数过
-                    seed_branch_block_count[info]++;
-                    isCount.insert(std::make_pair(currentId, currentTruth));
-                }
+                __r = min(__r, calculate_distance(LHS, RHS, cmpId, currentTruth, targetTruth, isSelfMode));
             } 
         }
 
         if(isLeaf[currentId]){
-            if(currentId == targetId) {
+            if(currentId == target) {
                 __r = 0.0; // 已经覆盖目标分支
             } 
             if(explored.find(currentId) == explored.end()) {
@@ -197,4 +180,4 @@ extern "C" {
             }
         }
     }
-}   //如果
+}
