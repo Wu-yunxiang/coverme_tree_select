@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "constants.h"
+#include "config.h"
 #include "prepare_for_update.h"
 
 // LLVM CmpInst Predicates
@@ -171,7 +171,7 @@ void handle_base(double LHS, double RHS, int cmpId, int unexploredNode, int curr
             temporary_r = calculate_distance(LHS, RHS, cmpId, current < brCount, current < brCount, isSelfMode);
         }else{ 
             int &temporary_start = temporary_start_for_unexplored[unexploredNode];
-            temporary_start = min(temporary_start, conds_satisfied);
+            temporary_start = std::min(temporary_start, conds_satisfied);
             conds_satisfied_last[unexploredNode] = conds_satisfied;
             temporary_r_for_unexplored[unexploredNode][conds_satisfied] = calculate_distance(LHS, RHS, cmpId, current < brCount, current < brCount, isSelfMode);
         }
@@ -219,7 +219,7 @@ void handle_delta(double LHS, double RHS, int cmpId, int unexploredNode, int cur
             temporary_r = calculate_distance(LHS, RHS, cmpId, current < brCount, current < brCount, isSelfMode);
         }else{ 
             int &temporary_start = temporary_start_for_unexplored[unexploredNode];
-            temporary_start = min(temporary_start, conds_satisfied);
+            temporary_start = std::min(temporary_start, conds_satisfied);
             conds_satisfied_last[unexploredNode] = conds_satisfied;
             temporary_r_for_unexplored[unexploredNode][conds_satisfied] = calculate_distance(LHS, RHS, cmpId, current < brCount, current < brCount, isSelfMode);
         }
@@ -279,7 +279,7 @@ extern "C" {
                 if(it_reverse != node_map[target].end()) { // 当前节点的反向节点在目标前缀上，说明当前节点是第一个不满足的，需要计算距离
                     int conds_satisfied = it_reverse->second + 1; // 当前满足的条件个数
                     if(conds_satisfied > conds_satisfied_max_sample) { // 考虑到循环
-                        __r = min(__r, calculate_distance(LHS, RHS, cmpId, currentTruth, targetTruth, isSelfMode));
+                        __r = std::fmin(__r, calculate_distance(LHS, RHS, cmpId, currentTruth, targetTruth, isSelfMode));
                     }
                 }
             }

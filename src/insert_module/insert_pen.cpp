@@ -58,7 +58,6 @@ struct InsertPenPass : public ModulePass {
                     }
                 }
                 int totalBr = brCount;          // 总分支/select指令数
-                // int totalExits = 2 * totalBr; // 总出口数 (变量保留但在此逻辑中主要作为Offset使用)
                 int ROOT = -1;                  // 虚拟根节点ID，标记无父节点的情况
 
                 // ---------- 第二阶段：建立基本块索引和支配树 ----------
@@ -131,7 +130,8 @@ struct InsertPenPass : public ModulePass {
 
                 // ---------- 第四阶段：输出边信息 ----------
                 std::ofstream edgeFile;
-                edgeFile.open("to do (by configs)", std::ofstream::out | std::ofstream::trunc);
+                // 直接使用相对路径输出到 output/edges.txt
+                edgeFile.open("output/edges.txt", std::ofstream::out | std::ofstream::trunc);
                 
                 for (Instruction *inst : allBranches) {
                     int id = instToId[inst];
@@ -222,6 +222,9 @@ struct InsertPenPass : public ModulePass {
                     }
                     builder.CreateCall(func___pen, call_params, "");
                 }
+
+                // 将待测函数重命名为固定的名字，以便 Python 端通过 ctypes 统一调用
+                F.setName("__coverme_target_function");
 
                 return true;
             }
