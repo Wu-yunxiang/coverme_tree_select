@@ -1,13 +1,11 @@
 #include <cmath>
 #include <utility>
-#include <set>
 #include <unordered_set>
-#include <map>
+#include <unordered_map>
 #include <vector>
 
 #include "constants.h"
-#include "interface_for_py.h"
-#include "leaf_graph.h"
+#include "prepare_for_update.h"
 
 // LLVM CmpInst Predicates
 enum Predicate {
@@ -136,47 +134,163 @@ static inline double calculate_distance(double LHS, double RHS, int cmpId, bool 
     }
 }
 
-extern std::unordered_set<int> explored; // 只记录叶结点，叶结点没有第二维，统计覆盖率的时候统一添加路径上所有
-int target; // 当前待覆盖或者待判定的叶结点
-bool isSuccess; //本次调用是否覆盖了目标
-bool currentSeedId; // 当前种子ID
-bool isSelfMode = true; // 初始值
-extern std::vector<int> node_prefix[MAXN];
-extern int deep[MAXN];
+extern std::unordered_set<int> explored; 
+extern std::unordered_set<int> unexplored;
+int target; // 当前待覆盖/待检查的结点
+bool isSelfMode = true; // 初始模式
+bool isGetBase = false; // 是否在获取基准阶段
+int conds_satisfied_max_seed; // 记录当前种子满足的最大条件数, 运行完待测函数更新一次，每个种子初始化一次
+int conds_satisfied_max_sample; // 记录当前样本满足的最大条件数, 调用 __pen 更新一次，每个样本初始化一次
+std::unordered_map<int, int> conds_satisfied_max_sample_for_unexplored; // 记录每个待覆盖节点当前样本满足的最大条件数, 调用 __pen 更新一次，每个样本初始化一次
+std::unordered_map<int, std::unordered_map<int, double>> delta_r_for_unexplored; // 记录每个待覆盖节点的每个依赖，在当前样本的距离, 调用 __pen 更新一次，每个样本初始化一次
+std::unordered_map<int, std::unordered_map<int, double>> base_r_for_unexplored; // 记录每个待覆盖节点的每个依赖，在基准下的距离
+std::unordered_map<int, std::unordered_map<int, double>> temporary_r_for_unexplored; //每个样本初始化一次
+std::unordered_map<int, int> temporary_start_for_unexplored; // 恢复时栈的开头，每个样本初始化一次
+std::unordered_map<int, int> conds_satisfied_last; // 上一次满足的是第几个条件，每个样本初始化
+extern std::vector<int> node_prefix[MAXN]; 
+extern std::unordered_map<int, int> node_map[MAXN];
+extern int brCount;
+extern int nodeToSeed[MAXN]; // 记录每个结点对应的种子ID
+extern std::vector<double> seeds[MAXN]; // 记录每个种子的输入组合, 每次运行待测函数根据is_efc更新
+bool is_efc; // 本次待测函数运行是否覆盖了新分支，用于seedId更新
+extern int efc_seed_count; //每次运行待测函数根据is_efc更新
+extern double __r;
 
-static inline std::pair<int, bool> isSatisfied(int currentId, bool currentTruth) {
-    int first = -1;
-    bool second = false;
-    for(int i=0; i<node_prefix[target].size(); i++) {
-        auto p = node_prefix[target][i];
-        if(p == currentId) {
-            first = i;
-            second = currentTruth;
-            break;
+void handle_base(double LHS, double RHS, int cmpId, int unexploredNode, int current){
+    auto it = node_map[unexploredNode].find(current);
+    if(it != node_map[unexploredNode].end()) { 
+        if(temporary_start_for_unexplored.find(unexploredNode) == temporary_start_for_unexplored.end()) {
+            temporary_start_for_unexplored[unexploredNode] = 1;
+        }
+        int conds_satisfied = it->second + 1; // 当前满足的条件个数
+        if(conds_satisfied > conds_satisfied_max_sample_for_unexplored[unexploredNode]) {
+            conds_satisfied_max_sample_for_unexplored[unexploredNode] = conds_satisfied;
+        if(conds_satisfied > conds_satisfied_last[unexploredNode]){
+            conds_satisfied_last[unexploredNode] = conds_satisfied;
+            double &temporary_r = temporary_r_for_unexplored[unexploredNode][conds_satisfied];
+            temporary_r = calculate_distance(LHS, RHS, cmpId, current < brCount, current < brCount, isSelfMode);
+        }else{ 
+            int &temporary_start = temporary_start_for_unexplored[unexploredNode];
+            temporary_start = min(temporary_start, conds_satisfied);
+            conds_satisfied_last[unexploredNode] = conds_satisfied;
+            temporary_r_for_unexplored[unexploredNode][conds_satisfied] = calculate_distance(LHS, RHS, cmpId, current < brCount, current < brCount, isSelfMode);
+        }
+    }else{
+        int current_reverse = current < brCount ? (current + brCount) : (current - brCount); // 当前节点的反向节点
+        auto it_reverse = node_map[unexploredNode].find(current_reverse);
+        if(it_reverse != node_map[unexploredNode].end()) { // 当前节点的反向节点在目标前缀上，说明当前节点是第一个不满足的
+            int conds_satisfied = it_reverse->second + 1; // 满足的条件个数
+            if(conds_satisfied > conds_satisfied_max_sample_for_unexplored[unexploredNode]) {
+                if(base_r_for_unexplored[unexploredNode].find(conds_satisfied) == base_r_for_unexplored[unexploredNode].end()) { 
+                    double &base_r = base_r_for_unexplored[unexploredNode][conds_satisfied];
+                    base_r = calculate_distance(LHS, RHS, cmpId, current < brCount, current_reverse < brCount, isSelfMode);
+                    for(int i = temporary_start_for_unexplored[unexploredNode]; i < conds_satisfied; ++i) {
+                        base_r_for_unexplored[unexploredNode][i] = temporary_r_for_unexplored[unexploredNode][i];
+                    }
+                    temporary_start_for_unexplored[unexploredNode] = conds_satisfied;
+                }else{
+                    double &base_r = base_r_for_unexplored[unexploredNode][conds_satisfied];
+                    double distance = calculate_distance(LHS, RHS, cmpId, current < brCount, current_reverse < brCount, isSelfMode);
+                    if(base_r > distance) {
+                        base_r = distance;
+                        for(int i = temporary_start_for_unexplored[unexploredNode]; i < conds_satisfied; ++i) {
+                            base_r_for_unexplored[unexploredNode][i] = temporary_r_for_unexplored[unexploredNode][i];
+                        }
+                        temporary_start_for_unexplored[unexploredNode] = conds_satisfied;
+                    }
+                }
+            }
         }
     }
-    return std::make_pair(first, second);
+}
+
+void handle_delta(double LHS, double RHS, int cmpId, int unexploredNode, int current){
+    auto it = node_map[unexploredNode].find(current);
+    if(it != node_map[unexploredNode].end()) { 
+        if(temporary_start_for_unexplored.find(unexploredNode) == temporary_start_for_unexplored.end()) {
+            temporary_start_for_unexplored[unexploredNode] = 1;
+        }
+        int conds_satisfied = it->second + 1; // 当前满足的条件个数
+        if(conds_satisfied > conds_satisfied_max_sample_for_unexplored[unexploredNode]) {
+            conds_satisfied_max_sample_for_unexplored[unexploredNode] = conds_satisfied;
+        if(conds_satisfied > conds_satisfied_last[unexploredNode]){
+            conds_satisfied_last[unexploredNode] = conds_satisfied;
+            double &temporary_r = temporary_r_for_unexplored[unexploredNode][conds_satisfied];
+            temporary_r = calculate_distance(LHS, RHS, cmpId, current < brCount, current < brCount, isSelfMode);
+        }else{ 
+            int &temporary_start = temporary_start_for_unexplored[unexploredNode];
+            temporary_start = min(temporary_start, conds_satisfied);
+            conds_satisfied_last[unexploredNode] = conds_satisfied;
+            temporary_r_for_unexplored[unexploredNode][conds_satisfied] = calculate_distance(LHS, RHS, cmpId, current < brCount, current < brCount, isSelfMode);
+        }
+    }else{
+        int current_reverse = current < brCount ? (current + brCount) : (current - brCount); // 当前节点的反向节点
+        auto it_reverse = node_map[unexploredNode].find(current_reverse);
+        if(it_reverse != node_map[unexploredNode].end()) { // 当前节点的反向节点在目标前缀上，说明当前节点是第一个不满足的
+            int conds_satisfied = it_reverse->second + 1; // 满足的条件个数
+            if(conds_satisfied > conds_satisfied_max_sample_for_unexplored[unexploredNode]) {
+                if(delta_r_for_unexplored[unexploredNode].find(conds_satisfied) == delta_r_for_unexplored[unexploredNode].end()) { 
+                    double &delta_r = delta_r_for_unexplored[unexploredNode][conds_satisfied];
+                    delta_r = calculate_distance(LHS, RHS, cmpId, current < brCount, current_reverse < brCount, isSelfMode);
+                    for(int i = temporary_start_for_unexplored[unexploredNode]; i < conds_satisfied; ++i) {
+                        delta_r_for_unexplored[unexploredNode][i] = temporary_r_for_unexplored[unexploredNode][i];
+                    }
+                    temporary_start_for_unexplored[unexploredNode] = conds_satisfied;
+                }else{
+                    double &delta_r = delta_r_for_unexplored[unexploredNode][conds_satisfied];
+                    double distance = calculate_distance(LHS, RHS, cmpId, current < brCount, current_reverse < brCount, isSelfMode);
+                    if(delta_r > distance) {
+                        delta_r = distance;
+                        for(int i = temporary_start_for_unexplored[unexploredNode]; i < conds_satisfied; ++i) {
+                            delta_r_for_unexplored[unexploredNode][i] = temporary_r_for_unexplored[unexploredNode][i];
+                        }
+                        temporary_start_for_unexplored[unexploredNode] = conds_satisfied;
+                    }
+                }
+            }
+        }
+    }
 }
 
 extern "C" {
     void __pen(double LHS, double RHS, int brId, int cmpId, bool isInt) {
-        int currentId = brId;
         bool currentTruth = getTruth(LHS, RHS, cmpId);
-        std::pair<int, bool> satisfiedInfo = isSatisfied(currentId, currentTruth);
-        if(satisfiedInfo.first != -1) { // 当前分支在目标前缀路径上
-            if (!satisfiedInfo.second) { // 当前分支取值不满足条件
-                __r = min(__r, calculate_distance(LHS, RHS, cmpId, currentTruth, targetTruth, isSelfMode));
-            } 
+        int current = currentTruth ? brId : (brId + brCount); // 当前进入的节点
+        bool targetTruth = target < brCount ? true : false; // target < brCount 代表目标是 True 出口，否则是 False 出口
+
+        if(explored.find(current) == explored.end()) {
+            explored.insert(current);
+            unexplored.erase(current);
+            nodeToSeed[current] = efc_seed_count; 
+            is_efc = true; // 标记本次运行覆盖了新分支
         }
 
-        if(isLeaf[currentId]){
-            if(currentId == target) {
-                __r = 0.0; // 已经覆盖目标分支
-            } 
-            if(explored.find(currentId) == explored.end()) {
-                explored.insert(currentId);
-                leafToSeed[currentId] = currentSeedId;
-                update_other_leaf(currentId);
+        if(isSelfMode) {
+            auto it = node_map[target].find(current);
+            if(it != node_map[target].end()) { 
+                int conds_satisfied = it->second + 1; // 当前满足的条件个数
+                if(conds_satisfied > conds_satisfied_max_sample) {
+                    conds_satisfied_max_sample = conds_satisfied;
+                    __r = conds_satisfied_max_sample == node_prefix[target].size() ? 0.0 : INITIAL_R;
+                }
+            }else{
+                int current_reverse = current < brCount ? (current + brCount) : (current - brCount); // 当前节点的反向节点
+                auto it_reverse = node_map[target].find(current_reverse);
+                if(it_reverse != node_map[target].end()) { // 当前节点的反向节点在目标前缀上，说明当前节点是第一个不满足的，需要计算距离
+                    int conds_satisfied = it_reverse->second + 1; // 当前满足的条件个数
+                    if(conds_satisfied > conds_satisfied_max_sample) { // 考虑到循环
+                        __r = min(__r, calculate_distance(LHS, RHS, cmpId, currentTruth, targetTruth, isSelfMode));
+                    }
+                }
+            }
+        }else{ 
+            for(auto &unexploredNode : unexplored) {
+                if(isGetBase){
+                    handle_base(LHS, RHS, cmpId, unexploredNode, current);
+                }
+                else{
+                    handle_delta(LHS, RHS, cmpId, unexploredNode, current);
+                }
             }
         }
     }
