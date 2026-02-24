@@ -2,7 +2,7 @@
 #define CONFIG_H
 
 // 常量定义
-#define MAXN 1e5
+#define MAXN 100000
 #define EPS 1e-10
 #define SOLUTION_COMPLEXITY 10
 #define CANNOT_CMP_PENALTY 1e6

@@ -1,0 +1,2 @@
+/home/wuyunxiang/coverme_tree_select/benchs/fdlibm53_e_pow/foo.c
+foo_raw

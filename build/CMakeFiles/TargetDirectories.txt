@@ -1,0 +1,5 @@
+/home/wuyunxiang/coverme_tree_select/build/CMakeFiles/insert_pen.dir
+/home/wuyunxiang/coverme_tree_select/build/CMakeFiles/instrument_target.dir
+/home/wuyunxiang/coverme_tree_select/build/CMakeFiles/coverage.dir
+/home/wuyunxiang/coverme_tree_select/build/CMakeFiles/edit_cache.dir
+/home/wuyunxiang/coverme_tree_select/build/CMakeFiles/rebuild_cache.dir

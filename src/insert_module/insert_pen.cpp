@@ -7,8 +7,10 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Analysis/DominatorTree.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/CFG.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Passes/PassPlugin.h"
 
 // C++ 标准库
 #include <fstream>
@@ -23,16 +25,13 @@
 using namespace llvm;
 
 cl::opt<std::string> funcname("funcname", cl::desc("Specify function name"), cl::value_desc("funcname"));
-extern int brCount;  // 全局分支/select计数
-extern int argCount;
-struct InsertPenPass : public ModulePass {
-    static char ID;
-    InsertPenPass() : ModulePass(ID) {}
 
-    bool runOnModule(Module &M) override {
+struct InsertPenPass : public PassInfoMixin<InsertPenPass> {
+    bool instrument(Module &M) {
         for (Function &F : M) {
             if (F.getName() == funcname) {
-                int argCount = F.arg_size();
+                int argCount = static_cast<int>(F.arg_size());
+                int brCount = 0;
                 // ---------- 第一阶段：收集所有分支/select指令并分配ID ----------
                 std::map<Instruction*, int> instToId;          // 指令 -> 出口基ID
                 std::vector<Instruction*> allBranches;         // 所有分支/select指令
@@ -151,6 +150,11 @@ struct InsertPenPass : public ModulePass {
                 }
                 edgeFile.close();
 
+                std::ofstream metaFile;
+                metaFile.open("output/instrumentation_meta.txt", std::ofstream::out | std::ofstream::trunc);
+                metaFile << brCount << "\t" << argCount << "\n";
+                metaFile.close();
+
                 // ---------- 第五阶段：原有的插桩逻辑（保持不变） ----------
                 for (Instruction *inst : allBranches) {
                     CmpInst *cmpInst = nullptr;
@@ -231,8 +235,28 @@ struct InsertPenPass : public ModulePass {
         }
         return false;
     }
+
+    PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
+        bool changed = instrument(M);
+        return changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
+    }
 };
 
-char InsertPenPass::ID = 0;
-static RegisterPass<InsertPenPass> X("InsertPenPass", 
-    "Insert __pen calls at conditional branches");
+extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
+    return {
+        LLVM_PLUGIN_API_VERSION,
+        "insert_pen",
+        LLVM_VERSION_STRING,
+        [](PassBuilder &PB) {
+            PB.registerPipelineParsingCallback(
+                [](StringRef Name, ModulePassManager &MPM, ArrayRef<PassBuilder::PipelineElement>) {
+                    if (Name == "insert-pen") {
+                        MPM.addPass(InsertPenPass());
+                        return true;
+                    }
+                    return false;
+                }
+            );
+        }
+    };
+}

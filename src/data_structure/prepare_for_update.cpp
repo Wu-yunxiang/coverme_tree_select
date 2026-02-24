@@ -1,17 +1,19 @@
 #include <vector>
 #include <algorithm>
-#include <cstring>
 #include <unordered_map>
 
+#include "branch_tree.h"
+#include "prepare_for_update.h"
 #include "config.h"
 
-extern int brCount;
-extern int parent[MAXN]; 
 std::vector<int> node_prefix[MAXN]; // 记录每个节点的前缀路径
 std::unordered_map<int, int> node_map[MAXN]; // 对每个节点，保存其前缀中的元素到前缀序号的映射
 
 void initialize() {
     for (int i = 0; i < 2 * brCount; ++i) {
+        node_prefix[i].clear();
+        node_map[i].clear();
+
         int now = i;
         while (parent[now] != now) {
             node_prefix[i].push_back(now);

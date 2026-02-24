@@ -1,10 +1,10 @@
 #include <cmath>
-#include <utility>
 #include <unordered_set>
 #include <unordered_map>
 #include <vector>
 
-#include "config.h"
+#include "branch_tree.h"
+#include "pen.h"
 #include "prepare_for_update.h"
 
 // LLVM CmpInst Predicates
@@ -134,11 +134,9 @@ static inline double calculate_distance(double LHS, double RHS, int cmpId, bool 
     }
 }
 
-extern std::unordered_set<int> explored; 
-extern std::unordered_set<int> unexplored;
 int target; // 当前待覆盖/待检查的结点
-bool isSelfMode = true; // 初始模式
-bool isGetBase = false; // 是否在获取基准阶段
+bool isSelfMode; // 模式
+bool isGetBase; // 是否在获取基准阶段
 int conds_satisfied_max_seed; // 记录当前种子满足的最大条件数, 运行完待测函数更新一次，每个种子初始化一次
 int conds_satisfied_max_sample; // 记录当前样本满足的最大条件数, 调用 __pen 更新一次，每个样本初始化一次
 std::unordered_map<int, int> conds_satisfied_max_sample_for_unexplored; // 记录每个待覆盖节点当前样本满足的最大条件数, 调用 __pen 更新一次，每个样本初始化一次
@@ -147,16 +145,17 @@ std::unordered_map<int, std::unordered_map<int, double>> base_r_for_unexplored; 
 std::unordered_map<int, std::unordered_map<int, double>> temporary_r_for_unexplored; //每个样本初始化一次
 std::unordered_map<int, int> temporary_start_for_unexplored; // 恢复时栈的开头，每个样本初始化一次
 std::unordered_map<int, int> conds_satisfied_last; // 上一次满足的是第几个条件，每个样本初始化
-extern std::vector<int> node_prefix[MAXN]; 
-extern std::unordered_map<int, int> node_map[MAXN];
-extern int brCount;
-extern int nodeToSeed[MAXN]; // 记录每个结点对应的种子ID
-extern std::vector<double> seeds[MAXN]; // 记录每个种子的输入组合, 每次运行待测函数根据is_efc更新
+int nodeToSeed[MAXN]; // 记录每个结点对应的种子ID
 bool is_efc; // 本次待测函数运行是否覆盖了新分支，用于seedId更新
-extern int efc_seed_count; //每次运行待测函数根据is_efc更新
-extern double __r;
 
-void handle_base(double LHS, double RHS, int cmpId, int unexploredNode, int current){
+static inline void handle_by_mode(
+    double LHS,
+    double RHS,
+    int cmpId,
+    int unexploredNode,
+    int current,
+    std::unordered_map<int, std::unordered_map<int, double>> &r_for_unexplored
+) {
     auto it = node_map[unexploredNode].find(current);
     if(it != node_map[unexploredNode].end()) { 
         if(temporary_start_for_unexplored.find(unexploredNode) == temporary_start_for_unexplored.end()) {
@@ -165,6 +164,7 @@ void handle_base(double LHS, double RHS, int cmpId, int unexploredNode, int curr
         int conds_satisfied = it->second + 1; // 当前满足的条件个数
         if(conds_satisfied > conds_satisfied_max_sample_for_unexplored[unexploredNode]) {
             conds_satisfied_max_sample_for_unexplored[unexploredNode] = conds_satisfied;
+        }
         if(conds_satisfied > conds_satisfied_last[unexploredNode]){
             conds_satisfied_last[unexploredNode] = conds_satisfied;
             double &temporary_r = temporary_r_for_unexplored[unexploredNode][conds_satisfied];
@@ -181,20 +181,20 @@ void handle_base(double LHS, double RHS, int cmpId, int unexploredNode, int curr
         if(it_reverse != node_map[unexploredNode].end()) { // 当前节点的反向节点在目标前缀上，说明当前节点是第一个不满足的
             int conds_satisfied = it_reverse->second + 1; // 满足的条件个数
             if(conds_satisfied > conds_satisfied_max_sample_for_unexplored[unexploredNode]) {
-                if(base_r_for_unexplored[unexploredNode].find(conds_satisfied) == base_r_for_unexplored[unexploredNode].end()) { 
-                    double &base_r = base_r_for_unexplored[unexploredNode][conds_satisfied];
-                    base_r = calculate_distance(LHS, RHS, cmpId, current < brCount, current_reverse < brCount, isSelfMode);
+                if(r_for_unexplored[unexploredNode].find(conds_satisfied) == r_for_unexplored[unexploredNode].end()) { 
+                    double &r = r_for_unexplored[unexploredNode][conds_satisfied];
+                    r = calculate_distance(LHS, RHS, cmpId, current < brCount, current_reverse < brCount, isSelfMode);
                     for(int i = temporary_start_for_unexplored[unexploredNode]; i < conds_satisfied; ++i) {
-                        base_r_for_unexplored[unexploredNode][i] = temporary_r_for_unexplored[unexploredNode][i];
+                        r_for_unexplored[unexploredNode][i] = temporary_r_for_unexplored[unexploredNode][i];
                     }
                     temporary_start_for_unexplored[unexploredNode] = conds_satisfied;
                 }else{
-                    double &base_r = base_r_for_unexplored[unexploredNode][conds_satisfied];
+                    double &r = r_for_unexplored[unexploredNode][conds_satisfied];
                     double distance = calculate_distance(LHS, RHS, cmpId, current < brCount, current_reverse < brCount, isSelfMode);
-                    if(base_r > distance) {
-                        base_r = distance;
+                    if(r > distance) {
+                        r = distance;
                         for(int i = temporary_start_for_unexplored[unexploredNode]; i < conds_satisfied; ++i) {
-                            base_r_for_unexplored[unexploredNode][i] = temporary_r_for_unexplored[unexploredNode][i];
+                            r_for_unexplored[unexploredNode][i] = temporary_r_for_unexplored[unexploredNode][i];
                         }
                         temporary_start_for_unexplored[unexploredNode] = conds_satisfied;
                     }
@@ -204,52 +204,12 @@ void handle_base(double LHS, double RHS, int cmpId, int unexploredNode, int curr
     }
 }
 
+void handle_base(double LHS, double RHS, int cmpId, int unexploredNode, int current){
+    handle_by_mode(LHS, RHS, cmpId, unexploredNode, current, base_r_for_unexplored);
+}
+
 void handle_delta(double LHS, double RHS, int cmpId, int unexploredNode, int current){
-    auto it = node_map[unexploredNode].find(current);
-    if(it != node_map[unexploredNode].end()) { 
-        if(temporary_start_for_unexplored.find(unexploredNode) == temporary_start_for_unexplored.end()) {
-            temporary_start_for_unexplored[unexploredNode] = 1;
-        }
-        int conds_satisfied = it->second + 1; // 当前满足的条件个数
-        if(conds_satisfied > conds_satisfied_max_sample_for_unexplored[unexploredNode]) {
-            conds_satisfied_max_sample_for_unexplored[unexploredNode] = conds_satisfied;
-        if(conds_satisfied > conds_satisfied_last[unexploredNode]){
-            conds_satisfied_last[unexploredNode] = conds_satisfied;
-            double &temporary_r = temporary_r_for_unexplored[unexploredNode][conds_satisfied];
-            temporary_r = calculate_distance(LHS, RHS, cmpId, current < brCount, current < brCount, isSelfMode);
-        }else{ 
-            int &temporary_start = temporary_start_for_unexplored[unexploredNode];
-            temporary_start = std::min(temporary_start, conds_satisfied);
-            conds_satisfied_last[unexploredNode] = conds_satisfied;
-            temporary_r_for_unexplored[unexploredNode][conds_satisfied] = calculate_distance(LHS, RHS, cmpId, current < brCount, current < brCount, isSelfMode);
-        }
-    }else{
-        int current_reverse = current < brCount ? (current + brCount) : (current - brCount); // 当前节点的反向节点
-        auto it_reverse = node_map[unexploredNode].find(current_reverse);
-        if(it_reverse != node_map[unexploredNode].end()) { // 当前节点的反向节点在目标前缀上，说明当前节点是第一个不满足的
-            int conds_satisfied = it_reverse->second + 1; // 满足的条件个数
-            if(conds_satisfied > conds_satisfied_max_sample_for_unexplored[unexploredNode]) {
-                if(delta_r_for_unexplored[unexploredNode].find(conds_satisfied) == delta_r_for_unexplored[unexploredNode].end()) { 
-                    double &delta_r = delta_r_for_unexplored[unexploredNode][conds_satisfied];
-                    delta_r = calculate_distance(LHS, RHS, cmpId, current < brCount, current_reverse < brCount, isSelfMode);
-                    for(int i = temporary_start_for_unexplored[unexploredNode]; i < conds_satisfied; ++i) {
-                        delta_r_for_unexplored[unexploredNode][i] = temporary_r_for_unexplored[unexploredNode][i];
-                    }
-                    temporary_start_for_unexplored[unexploredNode] = conds_satisfied;
-                }else{
-                    double &delta_r = delta_r_for_unexplored[unexploredNode][conds_satisfied];
-                    double distance = calculate_distance(LHS, RHS, cmpId, current < brCount, current_reverse < brCount, isSelfMode);
-                    if(delta_r > distance) {
-                        delta_r = distance;
-                        for(int i = temporary_start_for_unexplored[unexploredNode]; i < conds_satisfied; ++i) {
-                            delta_r_for_unexplored[unexploredNode][i] = temporary_r_for_unexplored[unexploredNode][i];
-                        }
-                        temporary_start_for_unexplored[unexploredNode] = conds_satisfied;
-                    }
-                }
-            }
-        }
-    }
+    handle_by_mode(LHS, RHS, cmpId, unexploredNode, current, delta_r_for_unexplored);
 }
 
 extern "C" {
