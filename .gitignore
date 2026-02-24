@@ -1,1 +1,42 @@
+# OS / editor
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/c_cpp_properties.json
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# CMake / build
+/build/
+/build_cmake/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+Makefile
+
+# Native / LLVM artifacts
+*.o
+*.a
+*.so
+*.bc
+*.ll
+*.s
+*.dSYM/
+core
+
+# Generated outputs
+/output/*
+!/output/.gitkeep
+
+# Instrumented temporary files in benches
+benchs/**/*.bc
+benchs/**/*.ll
+benchs/**/*.pen.bc

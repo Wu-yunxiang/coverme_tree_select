@@ -47,7 +47,10 @@ extern "C" void warmup_target(int targetNode) {
     conds_satisfied_max_sample = 0;
 }
 
-extern "C" int pop_queue_target() { // 返回结果为-1代表队列空了且没有target,包含了每个seed的初始化
+extern "C" TargetAndSeed pop_queue_target() { // 返回结果中的target=-1代表队列空了且没有target,seedId作为py初始值，也包含了每个seed的初始化
+    TargetAndSeed t;
+    t.targetId = -1;
+    t.seedId = -1;
     while (!queue_for_select.empty()) {
         priority_info info = queue_for_select.top();
         queue_for_select.pop();
@@ -55,10 +58,13 @@ extern "C" int pop_queue_target() { // 返回结果为-1代表队列空了且没
             target = info.nodeId;
             conds_satisfied_max_seed = 0;
             conds_satisfied_max_sample = 0;
-            return target;
+            TargetAndSeed t;
+            t.targetId = info.nodeId;
+            t.seedId = info.seedId;
+            break;
         }
     }
-    return -1;
+    return t;
 }
 
 extern "C" int nExplored(){
@@ -188,4 +194,8 @@ extern "C" void update_queue(){
         info.seedId = seedId_base;
         queue_for_select.push(info);
     }
+}
+
+extern "C" double get_r() {
+    return __r;
 }

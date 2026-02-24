@@ -12,7 +12,7 @@ void add_edge(int u, int v) {
     parent[v] = u; 
 } // 单向边 父节点 
 
-bool load_instrumentation_meta() {
+void load_instrumentation_meta() {
     std::ifstream metaInfo("output/instrumentation_meta.txt");
     metaInfo >> brCount >> argCount;
 }

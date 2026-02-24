@@ -70,7 +70,7 @@ CMakeFiles/insert_pen: insert_pen.so
 
 insert_pen.so: /home/wuyunxiang/coverme_tree_select/src/insert_module/insert_pen.cpp
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --blue --bold --progress-dir=/home/wuyunxiang/coverme_tree_select/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building LLVM insert pass plugin"
-	/usr/bin/c++ -shared -fPIC /home/wuyunxiang/coverme_tree_select/src/insert_module/insert_pen.cpp -o /home/wuyunxiang/coverme_tree_select/build/insert_pen.so -I/usr/lib/llvm-18/include -std=c++17 -fno-exceptions -funwind-tables -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -L/usr/lib/llvm-18/lib -lLLVM-18
+	/usr/bin/c++ -shared -fPIC -fcf-protection=none /home/wuyunxiang/coverme_tree_select/src/insert_module/insert_pen.cpp -o /home/wuyunxiang/coverme_tree_select/build/insert_pen.so -I/usr/lib/llvm-18/include -std=c++17 -fno-exceptions -funwind-tables -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -L/usr/lib/llvm-18/lib -lLLVM-18
 
 insert_pen: CMakeFiles/insert_pen
 insert_pen: insert_pen.so
