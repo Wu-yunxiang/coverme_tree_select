@@ -72,9 +72,17 @@ extern "C" int nExplored(){
 }
 
 extern "C" FlagAndSeed finish_sample() {
-    if(!isSelfMode && !isGetBase) {
+    if(isSelfMode) {
+        if(conds_satisfied_max_sample < conds_satisfied_max_seed) {
+            __r = INITIAL_R;
+        }else{
+            conds_satisfied_max_seed = conds_satisfied_max_sample;
+        }
+    }
+    else if(!isGetBase) {
         update_sample();
     }
+    
     int seedId = -1;
     int flags = 0;
     if (is_efc) { // py接收后更新python的seeds数组,下标为seedId
@@ -114,7 +122,6 @@ void initial_sample(){
 
 extern "C" void begin_self_phase() {
     isSelfMode = true;
-    conds_satisfied_max_seed = std::max(conds_satisfied_max_seed, conds_satisfied_max_sample);
     conds_satisfied_max_sample = 0;
     initial_sample();
 }

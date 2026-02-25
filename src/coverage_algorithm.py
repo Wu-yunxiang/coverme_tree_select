@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import ctypes
 from ctypes import cdll
@@ -34,19 +35,17 @@ lib.update_queue.restype = None
 lib.get_r.restype = ctypes.c_double
 
 DELTA = 1.0
-WARMUP_COVERAGE = 0.25
+WARMUP_COVERAGE = 0.5
 WARMUP_MIN_ROUNDS = 4
 SEED_LOW = -1024.0
 SEED_HIGH = 1024.0
-NUM_TOL = 1e-12
-PENALTY_SCALE = 1e6
-INPUT_ABS_BOUND = 1.0e4
-MAX_OBJECTIVE = 1.0e6
 effective_input_path = os.path.join(path_helper.get_output_dir(), "effective_input.txt")
 
 FLAG_NEW_COVERAGE = 1
 FLAG_TARGET_COVERED = 2
 FLAG_ALL_COVERED = 4
+
+seeds = []
 
 class CoverageComplete(Exception):
     pass
@@ -54,90 +53,41 @@ class CoverageComplete(Exception):
 class TargetCovered(Exception):
     pass
 
+def call_delta(x_delta):
+    lib.begin_delta_phase()
+    lib.__coverme_target_function(*x_delta)
+    flag_and_seed = lib.finish_sample()
 
-_target_argtypes_dim = -1
-_raise_on_target_covered = False
-seedid_to_input = {}
-
-
-def sanitize_vector(x):
-    values = np.asarray(x, dtype=np.float64)
-    values = np.nan_to_num(values, nan=0.0, posinf=INPUT_ABS_BOUND, neginf=-INPUT_ABS_BOUND)
-    return np.clip(values, -INPUT_ABS_BOUND, INPUT_ABS_BOUND)
-
-
-def normalize_objective(r_value):
-    if not np.isfinite(r_value):
-        return MAX_OBJECTIVE
-    safe = max(0.0, float(r_value))
-    return float(np.log1p(safe / PENALTY_SCALE))
-
-
-def call_target(x):
-    global _target_argtypes_dim
-    values = sanitize_vector(x)
-    if values.size != _target_argtypes_dim:
-        lib.__coverme_target_function.argtypes = [ctypes.c_double] * int(values.size)
-        _target_argtypes_dim = int(values.size)
-    lib.__coverme_target_function(*[float(v) for v in values])
-
-
-def random_seed_vector(input_dim):
-    return np.random.uniform(SEED_LOW, SEED_HIGH, size=input_dim).astype(np.float64)
-
-
-def mybounds(**kwargs):
-    x_new = kwargs.get("x_new")
-    if x_new is None:
-        return True
-    values = np.asarray(x_new, dtype=np.float64)
-    return bool(np.all(np.isfinite(values)) and np.all(np.abs(values) <= INPUT_ABS_BOUND + NUM_TOL))
-
-
-def record_seed_if_needed(values, result):
-    if (result.flags & FLAG_NEW_COVERAGE) and result.seedId >= 0:
-        snapshot = np.asarray(values, dtype=np.float64).copy()
-        seedid_to_input[result.seedId] = snapshot
-        with open(effective_input_path, "a", encoding="utf-8") as fp:
-            fp.write(f"{result.seedId}," + ",".join(f"{float(v):.17g}" for v in snapshot) + "\n")
-
-
-def raise_if_stop(flags):
-    if flags & FLAG_ALL_COVERED:
-        raise CoverageComplete()
-    if _raise_on_target_covered and (flags & FLAG_TARGET_COVERED):
-        raise TargetCovered()
-
+    if flag_and_seed.flags & FLAG_NEW_COVERAGE:
+        seeds.append(x_delta)
+        if flag_and_seed.flags & FLAG_ALL_COVERED:
+            raise CoverageComplete()
+        if flag_and_seed.flags & FLAG_TARGET_COVERED:
+            raise TargetCovered()
 
 def func_py(x):
-    values = sanitize_vector(x)
-
     lib.begin_self_phase()
-    call_target(values)
-    self_result = lib.finish_sample()
-    self_r = normalize_objective(float(lib.get_r()))
-    record_seed_if_needed(values, self_result)
-    raise_if_stop(self_result.flags)
+    lib.__coverme_target_function(*x)
+    flag_and_seed = lib.finish_sample()
+    ret = lib.get_r()
 
-    if self_result.flags & FLAG_NEW_COVERAGE:
+    if flag_and_seed.flags & FLAG_NEW_COVERAGE:
+        seeds.append(x)
+        
+        if flag_and_seed.flags & FLAG_ALL_COVERED:
+            raise CoverageComplete()
+        if flag_and_seed.flags & FLAG_TARGET_COVERED:
+            raise TargetCovered()
+        
         lib.begin_base_phase()
-        call_target(values)
-        base_result = lib.finish_sample()
-        record_seed_if_needed(values, base_result)
-        raise_if_stop(base_result.flags)
-
-        for idx in range(values.size):
-            sample = values.copy()
-            sample[idx] += DELTA
-            lib.begin_delta_phase()
-            call_target(sample)
-            delta_result = lib.finish_sample()
-            record_seed_if_needed(sample, delta_result)
-            raise_if_stop(delta_result.flags)
-
+        lib.__coverme_target_function(*x)
+        for i in range(input_dim):
+            x_delta = np.array(x)
+            x_delta[i] += DELTA
+            call_delta(x_delta)
         lib.update_queue()
-
-    return self_r
+    
+    return ret
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Coverage Algorithm based on Tree Select")
@@ -146,10 +96,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     lib.initialize_runtime()
-    open(effective_input_path, "w", encoding="utf-8").close()
 
     input_dim = lib.get_arg_count()
     total_exits = lib.get_br_count() * 2
+    lib.__coverme_target_function.argtypes = [ctypes.c_double] * input_dim
 
     def coverage_ratio():
         return float(lib.nExplored()) / float(total_exits)
@@ -163,20 +113,16 @@ if __name__ == "__main__":
         while warmup_round < WARMUP_MIN_ROUNDS or coverage_ratio() < WARMUP_COVERAGE:
             lib.warmup_target(int(np.random.randint(0, total_exits)))
             try:
-                _raise_on_target_covered = True
                 x0 =np.random.uniform(SEED_LOW, SEED_HIGH, size=input_dim).astype(np.float64)
                 op.basinhopping(
                     func_py,
                     x0,
-                    minimizer_kwargs={"method": "powell", "options": {"xtol": NUM_TOL, "ftol": NUM_TOL}},
+                    minimizer_kwargs={"method": "powell"},
                     niter=args.niter,
                     stepsize=args.stepSize,
-                    accept_test=mybounds,
                 )
             except TargetCovered:
                 pass
-            finally:
-                _raise_on_target_covered = False
 
             warmup_round += 1
             iteration_count += 1
@@ -188,23 +134,16 @@ if __name__ == "__main__":
             if target_and_seed.targetId == -1:
                 break
             try:
-                _raise_on_target_covered = True
-                if target_and_seed.seedId in seedid_to_input:
-                    x0 = seedid_to_input[target_and_seed.seedId].copy()
-                else:
-                    x0 = random_seed_vector(input_dim)
+                x0 = seeds[target_and_seed.seedId]
                 op.basinhopping(
                     func_py,
                     x0,
-                    minimizer_kwargs={"method": "powell", "options": {"xtol": NUM_TOL, "ftol": NUM_TOL}},
+                    minimizer_kwargs={"method": "powell"},
                     niter=args.niter,
                     stepsize=args.stepSize,
-                    accept_test=mybounds,
                 )
             except TargetCovered:
                 continue
-            finally:
-                _raise_on_target_covered = False
             
             iteration_count += 1
             if iteration_count % 100 == 0:
@@ -214,5 +153,9 @@ if __name__ == "__main__":
         pass
 
     end_time = time.process_time()
+
+    with open(effective_input_path, "w") as f:
+        for seed in seeds:
+            f.write(",".join(map(str, seed)) + "\n")
     print(f"Final coverage = {coverage_ratio():.2%}")
     print(f"Total process time = {end_time - start_time:.2f} seconds")

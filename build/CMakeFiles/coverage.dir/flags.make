@@ -6,5 +6,5 @@ CXX_DEFINES = -Dcoverage_EXPORTS
 
 CXX_INCLUDES = -I/home/wuyunxiang/coverme_tree_select/include
 
-CXX_FLAGS = -std=gnu++17 -fPIC -fcf-protection=none
+CXX_FLAGS = -std=gnu++17 -fPIC
 

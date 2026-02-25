@@ -72,9 +72,9 @@ include CMakeFiles/coverage.dir/flags.make
 target.pen.o: /home/wuyunxiang/coverme_tree_select/benchs/fdlibm53_e_pow/foo.c
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --blue --bold --progress-dir=/home/wuyunxiang/coverme_tree_select/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Instrumenting target source and generating object"
 	cd /home/wuyunxiang/coverme_tree_select && /usr/bin/cmake -E make_directory /home/wuyunxiang/coverme_tree_select/output
-	cd /home/wuyunxiang/coverme_tree_select && /usr/bin/clang -emit-llvm -c -fPIC -fcf-protection=none -Xclang -disable-O0-optnone /home/wuyunxiang/coverme_tree_select/benchs/fdlibm53_e_pow/foo.c -o /home/wuyunxiang/coverme_tree_select/build/target.bc
+	cd /home/wuyunxiang/coverme_tree_select && /usr/bin/clang -emit-llvm -c -fPIC -Xclang -disable-O0-optnone /home/wuyunxiang/coverme_tree_select/benchs/fdlibm53_e_pow/foo.c -o /home/wuyunxiang/coverme_tree_select/build/target.bc
 	cd /home/wuyunxiang/coverme_tree_select && /usr/bin/opt -load-pass-plugin /home/wuyunxiang/coverme_tree_select/build/insert_pen.so -passes=insert-pen -funcname=foo_raw /home/wuyunxiang/coverme_tree_select/build/target.bc -o /home/wuyunxiang/coverme_tree_select/build/target.pen.bc
-	cd /home/wuyunxiang/coverme_tree_select && /usr/bin/clang -fPIC -fcf-protection=none -c /home/wuyunxiang/coverme_tree_select/build/target.pen.bc -o /home/wuyunxiang/coverme_tree_select/build/target.pen.o
+	cd /home/wuyunxiang/coverme_tree_select && /usr/bin/clang -fPIC -c /home/wuyunxiang/coverme_tree_select/build/target.pen.bc -o /home/wuyunxiang/coverme_tree_select/build/target.pen.o
 
 CMakeFiles/coverage.dir/src/data_structure/branch_tree.cpp.o: CMakeFiles/coverage.dir/flags.make
 CMakeFiles/coverage.dir/src/data_structure/branch_tree.cpp.o: /home/wuyunxiang/coverme_tree_select/src/data_structure/branch_tree.cpp
