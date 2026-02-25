@@ -132,7 +132,7 @@ if __name__ == "__main__":
         while True:
             target_and_seed = lib.pop_queue_target()
             if target_and_seed.targetId == -1:
-                break
+                continue
             try:
                 x0 = seeds[target_and_seed.seedId]
                 op.basinhopping(
@@ -143,7 +143,7 @@ if __name__ == "__main__":
                     stepsize=args.stepSize,
                 )
             except TargetCovered:
-                continue
+                pass
             
             iteration_count += 1
             if iteration_count % 100 == 0:
