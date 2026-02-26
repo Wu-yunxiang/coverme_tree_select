@@ -9,9 +9,6 @@ import scipy.optimize as op
 
 import path_helper
 
-class FlagAndSeed(ctypes.Structure):
-    _fields_ = [("flags", ctypes.c_int), ("seedId", ctypes.c_int)]
-
 class TargetAndSeed(ctypes.Structure):
     _fields_ = [("targetId", ctypes.c_int), ("seedId", ctypes.c_int)]
 
@@ -28,7 +25,7 @@ lib.warmup_target.restype = None
 lib.pop_queue_target.restype = TargetAndSeed
 lib.nExplored.restype = ctypes.c_int
 lib.begin_self_phase.restype = None
-lib.finish_sample.restype = FlagAndSeed
+lib.finish_sample.restype = ctypes.c_int
 lib.begin_base_phase.restype = None
 lib.begin_delta_phase.restype = None
 lib.update_queue.restype = None
@@ -56,27 +53,27 @@ class TargetCovered(Exception):
 def call_delta(x_delta):
     lib.begin_delta_phase()
     lib.__coverme_target_function(*x_delta)
-    flag_and_seed = lib.finish_sample()
+    flags = lib.finish_sample()
 
-    if flag_and_seed.flags & FLAG_NEW_COVERAGE:
+    if flags & FLAG_NEW_COVERAGE:
         seeds.append(x_delta)
-        if flag_and_seed.flags & FLAG_ALL_COVERED:
+        if flags & FLAG_ALL_COVERED:
             raise CoverageComplete()
-        if flag_and_seed.flags & FLAG_TARGET_COVERED:
+        if flags & FLAG_TARGET_COVERED:
             raise TargetCovered()
 
 def func_py(x):
     lib.begin_self_phase()
     lib.__coverme_target_function(*x)
-    flag_and_seed = lib.finish_sample()
+    flags = lib.finish_sample()
     ret = lib.get_r()
 
-    if flag_and_seed.flags & FLAG_NEW_COVERAGE:
+    if flags & FLAG_NEW_COVERAGE:
         seeds.append(x)
         
-        if flag_and_seed.flags & FLAG_ALL_COVERED:
+        if flags & FLAG_ALL_COVERED:
             raise CoverageComplete()
-        if flag_and_seed.flags & FLAG_TARGET_COVERED:
+        if flags & FLAG_TARGET_COVERED:
             raise TargetCovered()
         
         lib.begin_base_phase()
@@ -132,7 +129,7 @@ if __name__ == "__main__":
         while True:
             target_and_seed = lib.pop_queue_target()
             if target_and_seed.targetId == -1:
-                continue
+                break
             try:
                 x0 = seeds[target_and_seed.seedId]
                 op.basinhopping(

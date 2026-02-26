@@ -2,11 +2,6 @@
 #define INTERFACE_FOR_PY_H
 
 extern "C" {
-    struct FlagAndSeed {
-        int flags;
-        int seedId;
-    };
-
     struct TargetAndSeed {
         int targetId;
         int seedId;
@@ -19,7 +14,7 @@ extern "C" {
     TargetAndSeed pop_queue_target();
     int nExplored();
     void begin_self_phase();
-    FlagAndSeed finish_sample();
+    int finish_sample();
     void begin_base_phase();
     void begin_delta_phase();
     void update_queue();

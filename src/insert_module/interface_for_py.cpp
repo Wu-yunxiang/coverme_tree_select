@@ -58,7 +58,6 @@ extern "C" TargetAndSeed pop_queue_target() { // 返回结果中的target=-1代�
             target = info.nodeId;
             conds_satisfied_max_seed = 0;
             conds_satisfied_max_sample = 0;
-            TargetAndSeed t;
             t.targetId = info.nodeId;
             t.seedId = info.seedId;
             break;
@@ -71,7 +70,7 @@ extern "C" int nExplored(){
     return explored.size();
 }
 
-extern "C" FlagAndSeed finish_sample() {
+extern "C" int finish_sample() {
     if(isSelfMode) {
         if(conds_satisfied_max_sample < conds_satisfied_max_seed) {
             __r = INITIAL_R;
@@ -83,11 +82,10 @@ extern "C" FlagAndSeed finish_sample() {
         update_sample();
     }
     
-    int seedId = -1;
     int flags = 0;
-    if (is_efc) { // py接收后更新python的seeds数组,下标为seedId
+    if (is_efc) { // py接收后更新python的seeds数组,seedId和py端对应因此不需要传递
         flags |= 1;
-        seedId = efc_seed_count++;
+        efc_seed_count++;
     }
     if (explored.find(target) != explored.end()) {
         flags |= 2;
@@ -95,10 +93,8 @@ extern "C" FlagAndSeed finish_sample() {
     if (nExplored() >= brCount * 2) {
         flags |= 4;
     }
-    FlagAndSeed info;
-    info.flags = flags;
-    info.seedId = seedId;
-    return info;
+
+    return flags;
 }
 
 void initial_sample(){
@@ -130,7 +126,7 @@ extern "C" void begin_base_phase() {
     isSelfMode = false;
     isGetBase = true;
     gradient_score_sum.clear();
-    seedId_base = efc_seed_count;
+    seedId_base = efc_seed_count - 1;
     initial_sample();
 }
 
