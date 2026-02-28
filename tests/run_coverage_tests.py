@@ -8,6 +8,7 @@ the achieved coverage for each. Also tests the simple_func.c test target.
 
 import os
 import sys
+import shutil
 import subprocess
 import time
 import json
@@ -17,6 +18,7 @@ BUILD_DIR = os.path.join(ROOT_DIR, "build")
 TARGET_INPUT = os.path.join(ROOT_DIR, "target_input.txt")
 OUTPUT_DIR = os.path.join(ROOT_DIR, "output")
 EFFECTIVE_INPUT = os.path.join(OUTPUT_DIR, "effective_input.txt")
+COVERAGE_TIMEOUT = 120
 
 # Test targets: (source_path_relative_to_root, function_name, min_expected_coverage)
 TEST_TARGETS = [
@@ -78,7 +80,7 @@ def run_coverage(niter=5, step_size=300):
         cwd=ROOT_DIR,
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=COVERAGE_TIMEOUT,
     )
     output = result.stdout + result.stderr
     coverage = None
@@ -108,7 +110,8 @@ def run_test(source_path, function_name, min_coverage):
     write_target_input(source_path, function_name)
 
     # Clean and rebuild
-    subprocess.run(["rm", "-rf", BUILD_DIR], cwd=ROOT_DIR)
+    if os.path.isdir(BUILD_DIR):
+        shutil.rmtree(BUILD_DIR)
     ok, err = configure_and_build()
     if not ok:
         return False, None, None, f"Build failed: {err}"
@@ -117,7 +120,7 @@ def run_test(source_path, function_name, min_coverage):
     try:
         coverage, elapsed, output = run_coverage()
     except subprocess.TimeoutExpired:
-        return False, None, None, "Timeout (120s)"
+        return False, None, None, f"Timeout ({COVERAGE_TIMEOUT}s)"
     except Exception as e:
         return False, None, None, str(e)
 
