@@ -19,6 +19,11 @@ extern "C" {
     void begin_delta_phase();
     void update_queue();
     double get_r();
+
+    int get_node_seed(int node);
+    int get_tree_parent(int node);
+    int get_tree_children_count(int node);
+    int get_tree_child(int node, int index);
 }
 
 void update_sample();

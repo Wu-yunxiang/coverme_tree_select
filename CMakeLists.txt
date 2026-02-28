@@ -107,3 +107,20 @@ target_include_directories(coverage PRIVATE include)
 add_dependencies(coverage instrument_target)
 
 set_target_properties(coverage PROPERTIES OUTPUT_NAME _coverage)
+
+# ---------- Unit Tests ----------
+enable_testing()
+find_package(GTest QUIET)
+if(GTest_FOUND)
+    add_executable(test_core
+        tests/test_core.cpp
+        src/data_structure/branch_tree.cpp
+        src/data_structure/prepare_for_update.cpp
+        src/data_structure/select_priority.cpp
+        src/insert_module/pen.cpp
+        src/insert_module/interface_for_py.cpp
+    )
+    target_include_directories(test_core PRIVATE include)
+    target_link_libraries(test_core GTest::GTest GTest::Main)
+    add_test(NAME core_tests COMMAND test_core)
+endif()
