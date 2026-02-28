@@ -214,7 +214,7 @@ if __name__ == "__main__":
                             while stack:
                                 n = stack.pop()
                                 sid = lib.get_node_seed(n)
-                                if sid != -1 and sid < len(seeds):
+                                if sid >= 0 and sid < len(seeds):
                                     sibling_seed_ids.append(sid)
                                 cc = lib.get_tree_children_count(n)
                                 for j in range(cc):
@@ -223,7 +223,7 @@ if __name__ == "__main__":
                     if not sibling_seed_ids:
                         continue
 
-                    # Weighted average of covered seeds (uniform weights)
+                    # Arithmetic mean of covered seeds as initial seed
                     seed_vectors = [seeds[sid] for sid in sibling_seed_ids]
                     avg_seed = np.mean(seed_vectors, axis=0)
 

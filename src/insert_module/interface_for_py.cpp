@@ -204,17 +204,22 @@ extern "C" double get_r() {
 }
 
 extern "C" int get_node_seed(int node) {
+    if (node < 0 || node >= MAXN) return -1;
     return nodeToSeed[node];
 }
 
 extern "C" int get_tree_parent(int node) {
+    if (node < 0 || node >= MAXN) return node;
     return parent[node];
 }
 
 extern "C" int get_tree_children_count(int node) {
+    if (node < 0 || node >= MAXN) return 0;
     return (int)tree_edge[node].size();
 }
 
 extern "C" int get_tree_child(int node, int index) {
+    if (node < 0 || node >= MAXN) return -1;
+    if (index < 0 || index >= (int)tree_edge[node].size()) return -1;
     return tree_edge[node][index];
 }
