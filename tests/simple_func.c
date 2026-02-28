@@ -1,4 +1,4 @@
-double simple_target(double x) {
+double simple_func(double x) {
     if (x > 0.0) {
         return x + 1.0;
     }
