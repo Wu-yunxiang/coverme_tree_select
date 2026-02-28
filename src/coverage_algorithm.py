@@ -30,12 +30,21 @@ lib.begin_base_phase.restype = None
 lib.begin_delta_phase.restype = None
 lib.update_queue.restype = None
 lib.get_r.restype = ctypes.c_double
+lib.get_node_seed.argtypes = [ctypes.c_int]
+lib.get_node_seed.restype = ctypes.c_int
+lib.get_tree_parent.argtypes = [ctypes.c_int]
+lib.get_tree_parent.restype = ctypes.c_int
+lib.get_tree_children_count.argtypes = [ctypes.c_int]
+lib.get_tree_children_count.restype = ctypes.c_int
+lib.get_tree_child.argtypes = [ctypes.c_int, ctypes.c_int]
+lib.get_tree_child.restype = ctypes.c_int
 
 DELTA = 1.0
 WARMUP_COVERAGE = 0.5
 WARMUP_MIN_ROUNDS = 4
 SEED_LOW = -1024.0
 SEED_HIGH = 1024.0
+SEEDS_PER_LAYER = 5
 effective_input_path = os.path.join(path_helper.get_output_dir(), "effective_input.txt")
 
 FLAG_NEW_COVERAGE = 1
@@ -90,6 +99,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Coverage Algorithm based on Tree Select")
     parser.add_argument("-n", "--niter", type=int, default=5, help="Iteration number of BasinHopping")
     parser.add_argument("--stepSize", type=float, default=300.0, help="Step size")
+    parser.add_argument("--seedsPerLayer", type=int, default=SEEDS_PER_LAYER, help="Number of seeds per layer in tree-based phase")
     args = parser.parse_args()
 
     lib.initialize_runtime()
@@ -145,6 +155,97 @@ if __name__ == "__main__":
             iteration_count += 1
             if iteration_count % 100 == 0:
                 print(f"({iteration_count}, {coverage_ratio():.2%})")
+
+        # Phase 3: Tree-based weighted random seed generation for remaining uncovered nodes
+        uncovered_nodes = [i for i in range(total_exits) if lib.get_node_seed(i) == -1]
+
+        for u in uncovered_nodes:
+            if lib.get_node_seed(u) != -1:
+                continue
+
+            # Build path from root to u
+            path = []
+            current = u
+            while True:
+                path.append(current)
+                p = lib.get_tree_parent(current)
+                if p == current:
+                    break
+                current = p
+            path.reverse()
+
+            # Try each layer from innermost to outermost
+            for level_idx in range(len(path) - 1, -1, -1):
+                if lib.get_node_seed(u) != -1:
+                    break
+
+                if level_idx == 0:
+                    # Outermost layer: completely random
+                    for _ in range(args.seedsPerLayer):
+                        if lib.get_node_seed(u) != -1:
+                            break
+                        lib.warmup_target(u)
+                        x0 = np.random.uniform(SEED_LOW, SEED_HIGH, size=input_dim).astype(np.float64)
+                        try:
+                            op.basinhopping(
+                                func_py,
+                                x0,
+                                minimizer_kwargs={"method": "powell"},
+                                niter=args.niter,
+                                stepsize=args.stepSize,
+                            )
+                        except TargetCovered:
+                            break
+
+                        iteration_count += 1
+                        if iteration_count % 100 == 0:
+                            print(f"({iteration_count}, {coverage_ratio():.2%})")
+                else:
+                    level_node = path[level_idx]
+                    parent_node = lib.get_tree_parent(level_node)
+
+                    # Collect covered seed IDs from sibling subtrees
+                    sibling_seed_ids = []
+                    parent_children_count = lib.get_tree_children_count(parent_node)
+                    for ci in range(parent_children_count):
+                        child = lib.get_tree_child(parent_node, ci)
+                        if child != level_node:
+                            stack = [child]
+                            while stack:
+                                n = stack.pop()
+                                sid = lib.get_node_seed(n)
+                                if sid != -1 and sid < len(seeds):
+                                    sibling_seed_ids.append(sid)
+                                cc = lib.get_tree_children_count(n)
+                                for j in range(cc):
+                                    stack.append(lib.get_tree_child(n, j))
+
+                    if not sibling_seed_ids:
+                        continue
+
+                    # Weighted average of covered seeds (uniform weights)
+                    seed_vectors = [seeds[sid] for sid in sibling_seed_ids]
+                    avg_seed = np.mean(seed_vectors, axis=0)
+
+                    for _ in range(args.seedsPerLayer):
+                        if lib.get_node_seed(u) != -1:
+                            break
+                        lib.warmup_target(u)
+                        x0 = avg_seed.copy()
+                        try:
+                            op.basinhopping(
+                                func_py,
+                                x0,
+                                minimizer_kwargs={"method": "powell"},
+                                niter=args.niter,
+                                stepsize=args.stepSize,
+                            )
+                        except TargetCovered:
+                            break
+
+                        iteration_count += 1
+                        if iteration_count % 100 == 0:
+                            print(f"({iteration_count}, {coverage_ratio():.2%})")
 
     except CoverageComplete:
         pass

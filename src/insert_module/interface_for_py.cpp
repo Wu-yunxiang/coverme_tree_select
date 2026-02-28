@@ -202,3 +202,19 @@ extern "C" void update_queue(){
 extern "C" double get_r() {
     return __r;
 }
+
+extern "C" int get_node_seed(int node) {
+    return nodeToSeed[node];
+}
+
+extern "C" int get_tree_parent(int node) {
+    return parent[node];
+}
+
+extern "C" int get_tree_children_count(int node) {
+    return (int)tree_edge[node].size();
+}
+
+extern "C" int get_tree_child(int node, int index) {
+    return tree_edge[node][index];
+}
