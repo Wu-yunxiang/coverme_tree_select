@@ -1,2 +1,2 @@
-/home/wuyunxiang/coverme_tree_select/benchs/fdlibm53_e_pow/foo.c
-foo_raw
+/home/runner/work/coverme_tree_select/coverme_tree_select/tests/simple_func.c
+simple_func
