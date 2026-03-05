@@ -6,6 +6,7 @@ from ctypes import cdll
 import argparse
 import numpy as np
 import scipy.optimize as op
+from hypothesis.strategies import floats
 
 import path_helper
 
@@ -32,10 +33,8 @@ lib.update_queue.restype = None
 lib.get_r.restype = ctypes.c_double
 
 DELTA = 1.0
-WARMUP_COVERAGE = 0.5
+WARMUP_COVERAGE = 0.9
 WARMUP_MIN_ROUNDS = 4
-SEED_LOW = -1024.0
-SEED_HIGH = 1024.0
 effective_input_path = os.path.join(path_helper.get_output_dir(), "effective_input.txt")
 
 FLAG_NEW_COVERAGE = 1
@@ -97,6 +96,7 @@ if __name__ == "__main__":
     input_dim = lib.get_arg_count()
     total_exits = lib.get_br_count() * 2
     lib.__coverme_target_function.argtypes = [ctypes.c_double] * input_dim
+    get_float = floats().example
 
     def coverage_ratio():
         return float(lib.nExplored()) / float(total_exits)
@@ -110,7 +110,7 @@ if __name__ == "__main__":
         while warmup_round < WARMUP_MIN_ROUNDS or coverage_ratio() < WARMUP_COVERAGE:
             lib.warmup_target(int(np.random.randint(0, total_exits)))
             try:
-                x0 =np.random.uniform(SEED_LOW, SEED_HIGH, size=input_dim).astype(np.float64)
+                x0 = np.array([get_float() for _ in range(input_dim)], dtype=np.float64)
                 op.basinhopping(
                     func_py,
                     x0,
