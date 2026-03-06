@@ -21,20 +21,16 @@ lib.__coverme_target_function.restype = None
 lib.initialize_runtime.restype = None
 lib.get_arg_count.restype = ctypes.c_int
 lib.get_br_count.restype = ctypes.c_int
-lib.warmup_target.argtypes = [ctypes.c_int]
-lib.warmup_target.restype = None
-lib.pop_queue_target.restype = TargetAndSeed
+lib.set_target.restype = None
 lib.nExplored.restype = ctypes.c_int
 lib.begin_self_phase.restype = None
 lib.finish_sample.restype = ctypes.c_int
 lib.begin_base_phase.restype = None
 lib.begin_delta_phase.restype = None
-lib.update_queue.restype = None
 lib.get_r.restype = ctypes.c_double
 
 DELTA = 1.0
-WARMUP_COVERAGE = 0.9
-WARMUP_MIN_ROUNDS = 4
+COVERAGE_THRESHOLD = 0.9
 effective_input_path = os.path.join(path_helper.get_output_dir(), "effective_input.txt")
 
 FLAG_NEW_COVERAGE = 1
@@ -49,18 +45,6 @@ class CoverageComplete(Exception):
 class TargetCovered(Exception):
     pass
 
-def call_delta(x_delta):
-    lib.begin_delta_phase()
-    lib.__coverme_target_function(*x_delta)
-    flags = lib.finish_sample()
-
-    if flags & FLAG_NEW_COVERAGE:
-        seeds.append(x_delta)
-        if flags & FLAG_ALL_COVERED:
-            raise CoverageComplete()
-        if flags & FLAG_TARGET_COVERED:
-            raise TargetCovered()
-
 def func_py(x):
     lib.begin_self_phase()
     lib.__coverme_target_function(*x)
@@ -69,20 +53,11 @@ def func_py(x):
 
     if flags & FLAG_NEW_COVERAGE:
         seeds.append(x)
-        
         if flags & FLAG_ALL_COVERED:
             raise CoverageComplete()
         if flags & FLAG_TARGET_COVERED:
             raise TargetCovered()
         
-        lib.begin_base_phase()
-        lib.__coverme_target_function(*x)
-        for i in range(input_dim):
-            x_delta = np.array(x)
-            x_delta[i] += DELTA
-            call_delta(x_delta)
-        lib.update_queue()
-    
     return ret
     
 if __name__ == "__main__":
@@ -105,10 +80,8 @@ if __name__ == "__main__":
     
     try:
         iteration_count = 0
-
-        warmup_round = 0
-        while warmup_round < WARMUP_MIN_ROUNDS or coverage_ratio() < WARMUP_COVERAGE:
-            lib.warmup_target(int(np.random.randint(0, total_exits)))
+        while coverage_ratio() < COVERAGE_THRESHOLD:
+            lib.set_target()
             try:
                 x0 = np.array([get_float() for _ in range(input_dim)], dtype=np.float64)
                 op.basinhopping(
@@ -121,27 +94,6 @@ if __name__ == "__main__":
             except TargetCovered:
                 pass
 
-            warmup_round += 1
-            iteration_count += 1
-            if iteration_count % 100 == 0:
-                print(f"({iteration_count}, {coverage_ratio():.2%})")
-
-        while True:
-            target_and_seed = lib.pop_queue_target()
-            if target_and_seed.targetId == -1:
-                break
-            try:
-                x0 = seeds[target_and_seed.seedId]
-                op.basinhopping(
-                    func_py,
-                    x0,
-                    minimizer_kwargs={"method": "powell"},
-                    niter=args.niter,
-                    stepsize=args.stepSize,
-                )
-            except TargetCovered:
-                pass
-            
             iteration_count += 1
             if iteration_count % 100 == 0:
                 print(f"({iteration_count}, {coverage_ratio():.2%})")

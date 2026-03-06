@@ -1,6 +1,8 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <cmath>
+#include <random>
+#include <iterator>
 
 #include "branch_tree.h"
 #include "prepare_for_update.h"
@@ -15,6 +17,8 @@ std::unordered_set<int> unexplored; //待覆盖的节点
 int efc_seed_count;
 int seedId_base; // 本次base时代入的ID
 std::unordered_map<int, double> gradient_score_sum; // 节点，得分和
+
+static std::mt19937 gen(std::random_device{}());
 
 void initialize_for_py() {
     explored.clear();
@@ -41,29 +45,17 @@ extern "C" int get_arg_count() {
     return argCount;
 }
 
-extern "C" void warmup_target(int targetNode) {
-    target = targetNode;
+extern "C" void set_target() {
+    if (unexplored.empty()) {
+        target = -1;
+    } else {
+        std::uniform_int_distribution<> dis(0, unexplored.size() - 1);
+        auto it = unexplored.begin();
+        std::advance(it, dis(gen));
+        target = *it;
+    }
     conds_satisfied_max_seed = 0;
     conds_satisfied_max_sample = 0;
-}
-
-extern "C" TargetAndSeed pop_queue_target() { // 返回结果中的target=-1代表队列空了且没有target,seedId作为py初始值，也包含了每个seed的初始化
-    TargetAndSeed t;
-    t.targetId = -1;
-    t.seedId = -1;
-    while (!queue_for_select.empty()) {
-        priority_info info = queue_for_select.top();
-        queue_for_select.pop();
-        if (explored.find(info.nodeId) == explored.end()) {
-            target = info.nodeId;
-            conds_satisfied_max_seed = 0;
-            conds_satisfied_max_sample = 0;
-            t.targetId = info.nodeId;
-            t.seedId = info.seedId;
-            break;
-        }
-    }
-    return t;
 }
 
 extern "C" int nExplored(){
@@ -184,18 +176,6 @@ void update_sample(){
         if(flag && ratio_max < 1) {
             gradient_score_sum[node] += 1 - ratio_max; 
         }
-    }
-}
-
-extern "C" void update_queue(){
-    for(auto &node : unexplored) {
-        priority_info info;
-        info.nodeId = node;
-        info.similarity = base_r_for_unexplored[node].size() - 1;
-        info.constraint_nb = node_prefix[node].size();
-        info.gradient_score = gradient_score_sum[node];
-        info.seedId = seedId_base;
-        queue_for_select.push(info);
     }
 }
 
