@@ -21,6 +21,7 @@ extern std::unordered_map<int, std::unordered_map<int, double>> base_r_for_unexp
 extern std::unordered_map<int, std::unordered_map<int, double>> temporary_r_for_unexplored;
 extern std::unordered_map<int, int> temporary_start_for_unexplored;
 extern std::unordered_map<int, int> conds_satisfied_last;
+extern std::unordered_map<int, double> node_min_distance; // 新增：保存每个未覆盖节点满足下一条件所需的最小距离
 
 extern int nodeToSeed[MAXN];
 extern bool is_efc;

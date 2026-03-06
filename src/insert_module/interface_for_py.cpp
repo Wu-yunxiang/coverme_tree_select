@@ -23,6 +23,7 @@ static std::mt19937 gen(std::random_device{}());
 void initialize_for_py() {
     explored.clear();
     unexplored.clear();
+    node_min_distance.clear(); // 初始化
     for (int i = 0; i < brCount * 2; ++i) {
         unexplored.insert(i);
         nodeToSeed[i] = -1;
@@ -97,6 +98,7 @@ void initial_sample(){
     temporary_start_for_unexplored.clear();
     conds_satisfied_last.clear();
     conds_satisfied_max_sample_for_unexplored.clear();
+    node_min_distance.clear(); // 每次样本开始前清理
 
     if (isSelfMode) {
         return;
@@ -181,4 +183,31 @@ void update_sample(){
 
 extern "C" double get_r() {
     return __r;
+}
+
+extern "C" int get_unexplored_at(int index) {
+    if (index < 0 || index >= unexplored.size()) return -1;
+    auto it = unexplored.begin();
+    std::advance(it, index);
+    return *it;
+}
+
+extern "C" int get_unexplored_count() {
+    return unexplored.size();
+}
+
+extern "C" int get_satisfied_count(int nodeId) {
+    auto it = conds_satisfied_max_sample_for_unexplored.find(nodeId);
+    if (it != conds_satisfied_max_sample_for_unexplored.end()) {
+        return it->second;
+    }
+    return 0;
+}
+
+extern "C" double get_min_node_distance(int nodeId) {
+    auto it = node_min_distance.find(nodeId);
+    if (it != node_min_distance.end()) {
+        return it->second;
+    }
+    return -1.0;
 }

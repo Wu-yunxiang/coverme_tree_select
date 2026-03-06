@@ -145,6 +145,7 @@ std::unordered_map<int, std::unordered_map<int, double>> base_r_for_unexplored; 
 std::unordered_map<int, std::unordered_map<int, double>> temporary_r_for_unexplored; //每个样本初始化一次
 std::unordered_map<int, int> temporary_start_for_unexplored; // 恢复时栈的开头，每个样本初始化一次
 std::unordered_map<int, int> conds_satisfied_last; // 上一次满足的是第几个条件，每个样本初始化
+std::unordered_map<int, double> node_min_distance; // 新增
 int nodeToSeed[MAXN]; // 记录每个结点对应的种子ID
 bool is_efc; // 本次待测函数运行是否覆盖了新分支，用于seedId更新
 
@@ -184,6 +185,7 @@ static inline void handle_by_mode(
                 if(r_for_unexplored[unexploredNode].find(conds_satisfied) == r_for_unexplored[unexploredNode].end()) { 
                     double &r = r_for_unexplored[unexploredNode][conds_satisfied];
                     r = calculate_distance(LHS, RHS, cmpId, current < brCount, current_reverse < brCount, isSelfMode);
+                    node_min_distance[unexploredNode] = r; // 更新最小距离
                     for(int i = temporary_start_for_unexplored[unexploredNode]; i < conds_satisfied; ++i) {
                         r_for_unexplored[unexploredNode][i] = temporary_r_for_unexplored[unexploredNode][i];
                     }
@@ -193,6 +195,7 @@ static inline void handle_by_mode(
                     double distance = calculate_distance(LHS, RHS, cmpId, current < brCount, current_reverse < brCount, isSelfMode);
                     if(r > distance) {
                         r = distance;
+                        node_min_distance[unexploredNode] = r; // 更新最小距离
                         for(int i = temporary_start_for_unexplored[unexploredNode]; i < conds_satisfied; ++i) {
                             r_for_unexplored[unexploredNode][i] = temporary_r_for_unexplored[unexploredNode][i];
                         }
