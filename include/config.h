@@ -9,5 +9,6 @@
 #define INITIAL_R 1e12
 #define DELTA 1.0
 #define GRADIENT_REWARD 1e12
+#define COND_PENALTY 1e12
 
 #endif // CONFIG_H      

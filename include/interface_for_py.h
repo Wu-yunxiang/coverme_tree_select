@@ -5,7 +5,13 @@ extern "C" {
     void initialize_runtime();
     int get_br_count();
     int get_arg_count();
-    void set_target();
+    void set_target(int targetId);
+    int get_target(int threshold);
+    int get_unexplored_at(int index);
+    int get_unexplored_count();
+    int get_satisfied_count(int nodeId);
+    int get_total_prefix_count(int nodeId);
+    double get_min_node_distance(int nodeId);
     int nExplored();
     void begin_self_phase();
     int finish_sample();

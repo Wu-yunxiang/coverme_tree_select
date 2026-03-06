@@ -21,7 +21,10 @@ lib.__coverme_target_function.restype = None
 lib.initialize_runtime.restype = None
 lib.get_arg_count.restype = ctypes.c_int
 lib.get_br_count.restype = ctypes.c_int
+lib.set_target.argtypes = [ctypes.c_int]
 lib.set_target.restype = None
+lib.get_target.argtypes = [ctypes.c_int]
+lib.get_target.restype = ctypes.c_int
 lib.nExplored.restype = ctypes.c_int
 lib.begin_self_phase.restype = None
 lib.finish_sample.restype = ctypes.c_int
@@ -31,10 +34,12 @@ lib.get_r.restype = ctypes.c_double
 lib.get_unexplored_at.restype = ctypes.c_int
 lib.get_unexplored_count.restype = ctypes.c_int
 lib.get_satisfied_count.restype = ctypes.c_int
+lib.get_total_prefix_count.restype = ctypes.c_int
 lib.get_min_node_distance.restype = ctypes.c_double
 
 DELTA = 1.0
-COVERAGE_THRESHOLD = 0.9
+COVERAGE_THRESHOLD = 0.99
+CONDS_THRESHOLD = 2
 output_dir = path_helper.get_output_dir()
 effective_input_path = os.path.join(output_dir, "effective_input.txt")
 trace_log_path = os.path.join(output_dir, "trace_log.txt")
@@ -54,11 +59,18 @@ new_coverage_details = [] # 记录新覆盖出现时的层级编号 (BH, PowellR
 last_node_stats = {} # 缓存上一次节点的 sat 和 dist
 last_x = None # 缓存上一次的 x (参数向量)
 
+# 开关：True 开启文件读写，False 关闭文件读写
+ENABLE_LOGGING = False
+
 def log_trace(msg):
+    if not ENABLE_LOGGING:
+        return
     with open(trace_log_path, "a") as f:
         f.write(msg + "\n")
 
 def save_stats():
+    if not ENABLE_LOGGING:
+        return
     stats_path = os.path.join(output_dir, "func_run_stats.txt")
     new_cov_path = os.path.join(output_dir, "new_coverage_func_runs.txt")
     
@@ -95,8 +107,9 @@ class TargetCovered(Exception):
 
 total_func_counter = 0
 total_func_effective = 0
+target = None
 def func_py(x):
-    global total_func_counter, total_func_effective
+    global total_func_counter, total_func_effective, target
     total_func_counter += 1
     global func_counter, last_node_stats, last_x
     func_counter += 1
@@ -107,7 +120,7 @@ def func_py(x):
     lib.__coverme_target_function(*x)
     flags = lib.finish_sample()
     ret = lib.get_r()
-
+    '''
     # 处理 x 的各个维度变化量
     x_stats = []
     for i, val in enumerate(x):
@@ -130,6 +143,7 @@ def func_py(x):
     for i in range(u_count):
         node_id = lib.get_unexplored_at(i)
         sat = lib.get_satisfied_count(node_id)
+        total = lib.get_total_prefix_count(node_id)
         dist = lib.get_min_node_distance(node_id)
         current_stats[node_id] = (sat, dist)
         
@@ -137,10 +151,10 @@ def func_py(x):
             l_sat, l_dist = last_node_stats[node_id]
             diff_sat = sat - l_sat
             diff_dist = dist - l_dist
-            sat_str = f"{sat}({diff_sat:+=d})"
+            sat_str = f"{sat}/{total}({diff_sat:+=d})"
             dist_str = f"{dist:.4f}({diff_dist:+.4f})"
         else:
-            sat_str = f"{sat}(init)"
+            sat_str = f"{sat}/{total}(init)"
             dist_str = f"{dist:.4f}(init)"
         
         # 记录缩进格式：Node 缩进 5 层 (比 FuncRun 再多一层)
@@ -151,14 +165,14 @@ def func_py(x):
     # 记录缩进格式：FuncRun 保持 4 层缩进
     indent = "    " * 4
     x_str = ", ".join(x_stats)
-    log_trace(f"{indent}FuncRun {func_counter}: x=[{x_str}], r={ret:.6f}")
+    log_trace(f"{indent}FuncRun {func_counter}: x=[{x_str}], r={ret:.6f}, target={target}")
     if flags & FLAG_NEW_COVERAGE:
         log_trace(f"{indent}    [NEW COVERAGE DETECTED!]")
-    #if unexplored_stats:
-        #log_trace("\n".join(unexplored_stats))
-
+    if unexplored_stats:
+        log_trace("\n".join(unexplored_stats))
+    '''
     if flags & FLAG_NEW_COVERAGE:
-        new_coverage_details.append((bh_counter, powell_counter, iter_counter, func_counter))
+        #new_coverage_details.append((bh_counter, powell_counter, iter_counter, func_counter))
         seeds.append(x)
         if flags & FLAG_ALL_COVERED:
             raise CoverageComplete()
@@ -206,21 +220,33 @@ if __name__ == "__main__":
         return float(lib.nExplored()) / float(total_exits)
 
     start_time = time.process_time()
-    
+    possible_seeds_count = 0
+    total_seeds_count = 0
     try:
         iteration_count = 0
         while coverage_ratio() < COVERAGE_THRESHOLD:
-            bh_counter += 1
-            powell_counter = 0
-            lib.set_target()
-            log_trace(f"BasinHopping Run {bh_counter} ")
             try:
                 x0 = np.array([get_float() for _ in range(input_dim)], dtype=np.float64)
+                total_seeds_count += 1
+                lib.begin_base_phase()
+                lib.__coverme_target_function(*x0)
+                target = lib.get_target(CONDS_THRESHOLD)
+                if target < 0:
+                    continue
+                bh_counter += 1
+                powell_counter = 0
+                lib.set_target(target)
+                possible_seeds_count += 1
+                log_trace(f"BasinHopping Run {bh_counter} ")
                 op.basinhopping(
                     func_py,
                     x0,
-                    minimizer_kwargs={"method": "powell", "callback": powell_callback},
-                    niter=args.niter,
+                    minimizer_kwargs={
+                        "method": "powell", 
+                        "callback": powell_callback,
+                        "options": {"maxiter": 1, "maxfev": 20}
+                    },
+                    niter=0,
                     stepsize=args.stepSize,
                     callback=bh_callback
                 )
@@ -247,3 +273,5 @@ if __name__ == "__main__":
     print(f"Total function runs = {total_func_counter}")
     print(f"Effective function runs = {total_func_effective}")
     print(f"Effective ratio = {total_func_effective/total_func_counter:.2%}")
+    print(f"Possible seeds ratio = {possible_seeds_count/total_seeds_count:.2%}")
+    print(f"Iteration count = {iteration_count}")

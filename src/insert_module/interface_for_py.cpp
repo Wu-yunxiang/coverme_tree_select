@@ -46,17 +46,41 @@ extern "C" int get_arg_count() {
     return argCount;
 }
 
-extern "C" void set_target() {
-    if (unexplored.empty()) {
-        target = -1;
-    } else {
-        std::uniform_int_distribution<> dis(0, unexplored.size() - 1);
-        auto it = unexplored.begin();
-        std::advance(it, dis(gen));
-        target = *it;
-    }
+extern "C" void set_target(int targetId) {
+    target = targetId;
     conds_satisfied_max_seed = 0;
     conds_satisfied_max_sample = 0;
+}
+
+extern "C" int get_target(int threshold) {
+    int best_target = -1;
+    int min_missing = 1000000;
+
+    for (int node : unexplored) {
+        // node_prefix[node].size() 是到达该节点所需的总条件数
+        int total_conds = node_prefix[node].size();
+        int satisfied = 0;
+        auto it = conds_satisfied_max_sample_for_unexplored.find(node);
+        if (it != conds_satisfied_max_sample_for_unexplored.end()) {
+            satisfied = it->second;
+        }
+        int missing = total_conds - satisfied;
+        if (missing < min_missing) {
+            min_missing = missing;
+            best_target = node;
+        } else if (missing == min_missing) {
+            // 如果欠缺条件数相同，可以随机选一个或保持现状，这里简单随机替换
+            static std::uniform_real_distribution<> dis(0, 1);
+            if (dis(gen) < 0.5) {
+                best_target = node;
+            }
+        }
+    }
+
+    if (min_missing > threshold) {
+        return -1;
+    }
+    return best_target;
 }
 
 extern "C" int nExplored(){
@@ -65,10 +89,12 @@ extern "C" int nExplored(){
 
 extern "C" int finish_sample() {
     if(isSelfMode) {
-        if(conds_satisfied_max_sample < conds_satisfied_max_seed) {
-            __r = INITIAL_R;
-        }else{
-            conds_satisfied_max_seed = conds_satisfied_max_sample;
+        if(conds_satisfied_max_sample < (int)node_prefix[target].size()) {
+            double penalty_dist = std::fmin(COND_PENALTY - 1.0, __r);
+            double remaining_conds = (double)node_prefix[target].size() - conds_satisfied_max_sample;
+            __r = remaining_conds * COND_PENALTY + penalty_dist;
+        } else {
+            __r = 0.0;
         }
     }
     else if(!isGetBase) {
@@ -200,6 +226,13 @@ extern "C" int get_satisfied_count(int nodeId) {
     auto it = conds_satisfied_max_sample_for_unexplored.find(nodeId);
     if (it != conds_satisfied_max_sample_for_unexplored.end()) {
         return it->second;
+    }
+    return 0;
+}
+
+extern "C" int get_total_prefix_count(int nodeId) {
+    if (nodeId >= 0 && nodeId < MAXN) {
+        return node_prefix[nodeId].size();
     }
     return 0;
 }
