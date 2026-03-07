@@ -49,10 +49,34 @@ extern "C" int set_target(int conds_diff_threshold) {
         target = -1;
         return -1;
     }
-    std::uniform_int_distribution<int> dist(0, unexplored.size() - 1);
-    auto it = unexplored.begin();
-    std::advance(it, dist(gen));
-    target = *it;
+
+    int best_node = -1;
+    int min_diff = 2147483647; // 较大的整数代表正无穷
+    int min_total = 2147483647;
+
+    for (int node : unexplored) {
+        int total = node_prefix[node].size();
+        int current_similarity = base_r_for_unexplored[node].size() - 1;
+        int diff = total - current_similarity;
+
+        if (diff < min_diff) {
+            min_diff = diff;
+            min_total = total;
+            best_node = node;
+        } else if (diff == min_diff) {
+            if (total < min_total) {
+                min_total = total;
+                best_node = node;
+            }
+        }
+    }
+
+    if (best_node == -1 || min_diff > conds_diff_threshold) {
+        target = -1;
+        return -1;
+    }
+
+    target = best_node;
     conds_satisfied_max_seed = 0;
     conds_satisfied_max_sample = 0;
     return target;
@@ -94,6 +118,9 @@ extern "C" int finish_sample() {
         }else{
             conds_satisfied_max_seed = conds_satisfied_max_sample;
         }
+        //__r = INITIAL_R * (node_prefix[target].size() - conds_satisfied_max_sample) + std::fmin(INITIAL_R - 1, __r);
+        //__r = (node_prefix[target].size() - conds_satisfied_max_sample) + __r/(__r+1);
+        //__r = INITIAL_R;
     }
     else if(!isGetBase) {
         update_sample();
@@ -143,7 +170,7 @@ extern "C" void begin_base_phase() {
     isSelfMode = false;
     isGetBase = true;
     gradient_score_sum.clear();
-    seedId_base = efc_seed_count - 1;
+    seedId_base = efc_seed_count;
     initial_sample();
 }
 

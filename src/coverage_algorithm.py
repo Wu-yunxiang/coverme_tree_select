@@ -35,7 +35,7 @@ lib.set_random_target.restype = None
 lib.set_random_target.argtypes = [ctypes.c_int]
 
 DELTA = 1.0
-COVERAGE_THRESHOLD = 0.9
+COVERAGE_THRESHOLD = 0.92
 CONDS_DIFF_THRESHOLD = 2
 effective_input_path = os.path.join(path_helper.get_output_dir(), "effective_input.txt")
 
@@ -111,13 +111,14 @@ if __name__ == "__main__":
     try:
         iteration_count = 0
         while coverage_ratio() < COVERAGE_THRESHOLD:
-            
-            if lib.set_target(CONDS_DIFF_THRESHOLD) < 0:
-                continue
-            
             try:
-                #lib.set_random_target(int(np.random.randint(0, total_exits)))
                 x0 = np.array([get_float() for _ in range(input_dim)], dtype=np.float64)
+                '''lib.begin_base_phase()
+                lib.__coverme_target_function(*x0)
+                if lib.set_target(CONDS_DIFF_THRESHOLD) < 0:
+                    continue
+                '''
+                lib.set_random_target(np.random.randint(0, total_exits - 1))
                 op.basinhopping(
                     func_py,
                     x0,
