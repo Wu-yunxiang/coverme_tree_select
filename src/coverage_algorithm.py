@@ -61,7 +61,10 @@ def call_delta(x_delta):
         if flags & FLAG_TARGET_COVERED:
             raise TargetCovered()
 
+func_count = 0
 def func_py(x):
+    global func_count
+    func_count += 1
     lib.begin_self_phase()
     lib.__coverme_target_function(*x)
     flags = lib.finish_sample()
@@ -87,7 +90,7 @@ def func_py(x):
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Coverage Algorithm based on Tree Select")
-    parser.add_argument("-n", "--niter", type=int, default=5, help="Iteration number of BasinHopping")
+    parser.add_argument("-n", "--niter", type=int, default=0, help="Iteration number of BasinHopping")
     parser.add_argument("--stepSize", type=float, default=300.0, help="Step size")
     args = parser.parse_args()
 
@@ -135,7 +138,10 @@ if __name__ == "__main__":
                 op.basinhopping(
                     func_py,
                     x0,
-                    minimizer_kwargs={"method": "powell"},
+                    minimizer_kwargs={
+                        "method": "powell",
+                        "options": {"maxiter": 1, "maxfev": 10}
+                    },
                     niter=args.niter,
                     stepsize=args.stepSize,
                 )
@@ -154,5 +160,6 @@ if __name__ == "__main__":
     with open(effective_input_path, "w") as f:
         for seed in seeds:
             f.write(",".join(map(str, seed)) + "\n")
-    print(f"Final coverage = {coverage_ratio():.2%}")
+    print(f"func_count = {func_count}")
+    print(f"Final covrage = {coverage_ratio():.2%}")
     print(f"Total process time = {end_time - start_time:.2f} seconds")
