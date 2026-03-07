@@ -10,7 +10,7 @@ extern "C" {
     void initialize_runtime();
     int get_br_count();
     int get_arg_count();
-    void warmup_target(int targetNode);
+    int set_target(int conds_diff_threshold);
     TargetAndSeed pop_queue_target();
     int nExplored();
     void begin_self_phase();

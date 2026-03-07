@@ -1,6 +1,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <cmath>
+#include <random>
 
 #include "branch_tree.h"
 #include "prepare_for_update.h"
@@ -15,6 +16,8 @@ std::unordered_set<int> unexplored; //待覆盖的节点
 int efc_seed_count;
 int seedId_base; // 本次base时代入的ID
 std::unordered_map<int, double> gradient_score_sum; // 节点，得分和
+
+static std::mt19937 gen(std::random_device{}());
 
 void initialize_for_py() {
     explored.clear();
@@ -41,8 +44,22 @@ extern "C" int get_arg_count() {
     return argCount;
 }
 
-extern "C" void warmup_target(int targetNode) {
-    target = targetNode;
+extern "C" int set_target(int conds_diff_threshold) {
+    if (unexplored.empty()) {
+        target = -1;
+        return -1;
+    }
+    std::uniform_int_distribution<int> dist(0, unexplored.size() - 1);
+    auto it = unexplored.begin();
+    std::advance(it, dist(gen));
+    target = *it;
+    conds_satisfied_max_seed = 0;
+    conds_satisfied_max_sample = 0;
+    return target;
+}
+
+extern "C" void set_random_target(int random_target) {
+    target = random_target;
     conds_satisfied_max_seed = 0;
     conds_satisfied_max_sample = 0;
 }
