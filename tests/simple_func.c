@@ -1,6 +1,8 @@
-double simple_func(double x) {
-    if (x > 0.0) {
-        return x + 1.0;
+#include <math.h>
+
+double simple_func(double x, double y) {
+    if (x * log2(y) == 1075.0) {
+        return x + y;
     }
     return -x;
 }

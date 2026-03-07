@@ -35,7 +35,7 @@ lib.set_random_target.restype = None
 lib.set_random_target.argtypes = [ctypes.c_int]
 
 DELTA = 1.0
-COVERAGE_THRESHOLD = 0.92
+COVERAGE_THRESHOLD = 0.9
 CONDS_DIFF_THRESHOLD = 2
 effective_input_path = os.path.join(path_helper.get_output_dir(), "effective_input.txt")
 
@@ -123,7 +123,7 @@ if __name__ == "__main__":
                     x0,
                     minimizer_kwargs={
                         "method": "powell",
-                        "options": {"maxiter": 1, "maxfev": 20}
+                        "options": {"maxiter": 10, "maxfev": 20}
                     },
                     niter=args.niter,
                     stepsize=args.stepSize,
