@@ -31,7 +31,7 @@ def run_once():
 def main():
     func_counts = []
     run_times = []
-    iterations = 100
+    iterations = 30
     
     print(f"Starting {iterations} iterations of coverage_algorithm.py...")
     

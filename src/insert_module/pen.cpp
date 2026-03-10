@@ -212,6 +212,9 @@ void handle_delta(double LHS, double RHS, int cmpId, int unexploredNode, int cur
     handle_by_mode(LHS, RHS, cmpId, unexploredNode, current, delta_r_for_unexplored);
 }
 
+extern int last_covered_node;
+extern int newly_covered_count;
+
 extern "C" {
     void __pen(double LHS, double RHS, int brId, int cmpId, bool isInt) {
         bool currentTruth = getTruth(LHS, RHS, cmpId);
@@ -223,6 +226,8 @@ extern "C" {
             unexplored.erase(current);
             nodeToSeed[current] = efc_seed_count; 
             is_efc = true; // 标记本次运行覆盖了新分支
+            last_covered_node = current; // 记录新覆盖的节点
+            newly_covered_count++; // 递增本次新覆盖的节点数
         }
 
         if(isSelfMode) {
@@ -251,6 +256,9 @@ extern "C" {
                 else{
                     handle_delta(LHS, RHS, cmpId, unexploredNode, current);
                 }
+            }
+            if(isGetBase) {
+                handle_base(LHS, RHS, cmpId, last_covered_node, current);
             }
         }
     }

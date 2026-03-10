@@ -1,12 +1,13 @@
-#include <cmath>
+#include <math.h>
 
 short dbl(short x) {
   return 2*x;
 }
 
-int foo_raw(short a){
+int foo_raw(double a){
 
-  if (dbl(a) + 3 == 9) {
+  int a_short = (short) a;
+  if (dbl(a_short) + 3 == 9) {
     return 0;
   } else {
     return 1;

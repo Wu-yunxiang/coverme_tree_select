@@ -1,5 +1,6 @@
-#include <cmath>
-void foo_raw(int x, double y){
+#include <math.h>
+void foo_raw(double db_x, double y){
+  int x=(int) floor(db_x);
   if (x<=3)
     return;
 
@@ -11,8 +12,8 @@ void foo_raw(int x, double y){
 }
 
 
-void foo(double * X){
+/*void foo(double * X){
   int x=(int)std::floor(X[0]);
   double y= X[1];
   foo_raw(x,y);
-}
+}*/

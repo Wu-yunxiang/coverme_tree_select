@@ -15,6 +15,8 @@ std::unordered_set<int> unexplored; //待覆盖的节点
 
 int efc_seed_count;
 int seedId_base; // 本次base时代入的ID
+int last_covered_node = -1; // 记录最新被覆盖的节点
+int newly_covered_count = 0; // 记录本次调用新覆盖的节点数
 std::unordered_map<int, double> gradient_score_sum; // 节点，得分和
 
 static std::mt19937 gen(std::random_device{}());
@@ -107,19 +109,32 @@ extern "C" TargetAndSeed pop_queue_target() { // 返回结果中的target=-1代�
     return t;
 }
 
+extern "C" int get_target() {
+    return target;
+}
+
+extern "C" int get_last_covered_node() {
+    return last_covered_node;
+}
+
+extern "C" void set_target_direct(int val) {
+    target = val;
+    explored.erase(val); // 求解前必须从已探索中移除，否则 finish_sample 不会触发覆盖标志
+}
+
 extern "C" int nExplored(){
     return explored.size();
 }
 
 extern "C" int finish_sample() {
     if(isSelfMode) {
-        if(conds_satisfied_max_sample < conds_satisfied_max_seed) {
+        /*if(conds_satisfied_max_sample < conds_satisfied_max_seed) {
             __r = INITIAL_R;
         }else{
             conds_satisfied_max_seed = conds_satisfied_max_sample;
-        }
+        }*/
         //__r = INITIAL_R * (node_prefix[target].size() - conds_satisfied_max_sample) + std::fmin(INITIAL_R - 1, __r);
-        //__r = (node_prefix[target].size() - conds_satisfied_max_sample) + __r/(__r+1);
+        __r = (node_prefix[target].size() - conds_satisfied_max_sample) + __r/(__r+1);
         //__r = INITIAL_R;
     }
     else if(!isGetBase) {
@@ -163,6 +178,7 @@ void initial_sample(){
 extern "C" void begin_self_phase() {
     isSelfMode = true;
     conds_satisfied_max_sample = 0;
+    newly_covered_count = 0; // 重置新覆盖计数
     initial_sample();
 }
 
@@ -245,4 +261,25 @@ extern "C" void update_queue(){
 
 extern "C" double get_r() {
     return __r;
+}
+
+extern "C" int get_node_status(double* last_dist, int* total_conds, int* newly_covered) {
+    if (last_covered_node == -1) {
+        *last_dist = -1.0;
+        *total_conds = 0;
+        *newly_covered = 0;
+        return 0;
+    }
+    
+    int nodeId = last_covered_node;
+    *total_conds = (int)node_prefix[nodeId].size();
+    *newly_covered = newly_covered_count;
+    
+    if (base_r_for_unexplored.find(nodeId) == base_r_for_unexplored.end() || base_r_for_unexplored[nodeId].empty()) {
+        *last_dist = -1.0;
+        return 0;
+    }
+    auto& v = base_r_for_unexplored[nodeId];
+    *last_dist = v[v.size()]; 
+    return (int)v.size() - 1;   
 }
