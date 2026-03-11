@@ -203,8 +203,6 @@ struct InsertPenPass : public PassInfoMixin<InsertPenPass> {
                     ConstantInt* brId_32 = ConstantInt::get(Type::getInt32Ty(M.getContext()), brId, false);
                     ConstantInt* cmpId_32 = ConstantInt::get(Type::getInt32Ty(M.getContext()), cmpId, false);
                     ConstantInt* isInt_1 = ConstantInt::getBool(M.getContext(), isInt); // i1
-                    // 注意：插桩函数签名通常要求 i32 用于 bool 参数，或者保持 i1，这里根据原代码逻辑适配
-                    // 原代码示例：Type::getInt1Ty(M.getContext()) 对应参数
                     
                     call_params.push_back(brId_32);
                     call_params.push_back(cmpId_32);

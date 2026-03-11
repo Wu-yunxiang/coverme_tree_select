@@ -1,21 +1,26 @@
-# CoverMe Tree Select
+<style>
+p,
+li {
+	font-size: 18px;
+}
+</style>
+# CoverMe Tree Select（关键文件介绍见PROJECT_FILES.md ！！！）
+基于前缀关系和选优策略的分支覆盖工具。
 
-基于树搜索策略的代码覆盖率估算工具。
-
-### 1. 快速构建
+### 1. 快速构建 
+target_input.txt 里输入待测函数所在文件路径和待测函数的名字，然后按照以下步骤在项目根目录下运行
 ```bash
 rm -rf build && cmake -S . -B build && cmake --build build
 ```
 
-### 2. 运行测试
 ```bash
-python3 src/coverage_algorithm.py -n 5 --stepSize 300
+python3 src/coverage_algorithm.py （-n --stepSize等可选项）
 ```
 
 ### 3. 查看结果
-测试生成的有效输入将保存在 `output/effective_input.txt` 中。
+命令行会有分支覆盖率等信息的输出，测试生成的有效输入将保存在 `output/effective_input.txt` 中。
 
-### 4. 项目演进
+### 4. 项目演进 (很久之前的草稿，不用管)
 由于阶段二种子很少，种子成功率低且锁死上限，所以决定把两个阶段融合
 首先对于每个种子按照 basinhopping编号，powell编号，powell内部迭代编号，函数运行编号的缩进格式输出，观察input的变化值和所有未覆盖点的满足数量和距离变化。期望得到找到覆盖的距离的变化情况，以及失败的距离变化情况，根据经验做出判定性的决策A快速排除错误的初始种子 （通过不同种类的扰动覆盖成败的差异情况，多臂老虎机等）
 若input变化明显，（为了充分利用必须进行的函数调用）则每次运行待测函数维护一个遍历的集合，对于每个未覆盖目标，二分得到满足的条件和距离，根据评估函数（满足条件数量，总条件数量，距离，之前种子的质量，失败次数）决定当前种子（是否优质）是否有必要作为该目标的初始。（变相于把相似度高的归为类似的种子，且对于每个目标进行了定制）

@@ -41,7 +41,7 @@ lib.set_target_direct.argtypes = [ctypes.c_int]
 lib.set_target_direct.restype = None
 
 DELTA = 1.0
-COVERAGE_THRESHOLD = 0.98
+COVERAGE_THRESHOLD = 0.98 # 目标覆盖率，到达后停止，可设置
 CONDS_DIFF_THRESHOLD = 2
 effective_input_path = os.path.join(path_helper.get_output_dir(), "effective_input.txt")
 
@@ -216,7 +216,7 @@ if __name__ == "__main__":
     end_time = time.process_time()
     final_cov = coverage_ratio()
     
-    # 运行结束后，重置状态进入求解验证阶段
+    # 运行结束后，重置状态进入求解验证阶段（该阶段用于分析而非覆盖，可被注释）
     is_solving_phase = True
     if os.path.exists(solve_data_path):
         with open(solve_data_path, "r") as info_f:
